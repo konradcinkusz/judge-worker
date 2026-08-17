@@ -21,7 +21,7 @@ jobs:
     env:
       REDIS_URL: redis://127.0.0.1:6379
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
 
       # No `version:` input -- pnpm/action-setup@v4 reads it from package.json's
       # `packageManager` field. Setting both is a hard error (ERR_PNPM_BAD_PM_VERSION).
