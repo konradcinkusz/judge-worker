@@ -25,7 +25,10 @@ async function main(): Promise<void> {
     throw new Error("--live requires ANTHROPIC_API_KEY to be set");
   }
   const provider = live
-    ? new LiveJudgeProvider(env.JUDGE_MODEL, env.ANTHROPIC_API_KEY)
+    ? new LiveJudgeProvider(
+        env.JUDGE_MODEL,
+        env.ANTHROPIC_API_KEY ? { apiKey: env.ANTHROPIC_API_KEY } : {},
+      )
     : new MockJudgeProvider();
 
   const [traces, labels] = await Promise.all([loadTracesFromDir(dir), loadHumanLabels(labelsPath)]);

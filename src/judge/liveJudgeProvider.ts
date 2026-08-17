@@ -19,14 +19,23 @@ import type { JudgeProvider } from "./judgeProvider.js";
  * (e.g. claude-sonnet-5) when the calibration report says Haiku's agreement with human
  * labels doesn't clear the bar.
  */
+export interface LiveJudgeProviderOptions {
+  apiKey?: string;
+  /** Injectable so tests can intercept requests without a real network call or API key. */
+  fetch?: typeof fetch;
+}
+
 export class LiveJudgeProvider implements JudgeProvider {
   readonly name = "live";
   readonly model: string;
   private readonly client: Anthropic;
 
-  constructor(model: string, apiKey?: string) {
+  constructor(model: string, options: LiveJudgeProviderOptions = {}) {
     this.model = model;
-    this.client = new Anthropic(apiKey ? { apiKey } : {});
+    this.client = new Anthropic({
+      ...(options.apiKey ? { apiKey: options.apiKey } : {}),
+      ...(options.fetch ? { fetch: options.fetch } : {}),
+    });
   }
 
   async grade(

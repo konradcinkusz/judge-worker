@@ -17,7 +17,10 @@ function main(): void {
     throw new Error("--live requires ANTHROPIC_API_KEY to be set");
   }
   const provider = live
-    ? new LiveJudgeProvider(env.JUDGE_MODEL, env.ANTHROPIC_API_KEY)
+    ? new LiveJudgeProvider(
+        env.JUDGE_MODEL,
+        env.ANTHROPIC_API_KEY ? { apiKey: env.ANTHROPIC_API_KEY } : {},
+      )
     : new MockJudgeProvider();
 
   logger.info(
