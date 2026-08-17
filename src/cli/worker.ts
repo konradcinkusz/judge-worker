@@ -2,6 +2,7 @@
 import { startWorker } from "../queue/worker.js";
 import { loadEnv } from "../config/env.js";
 import { logger } from "../observability/logger.js";
+import { safeResultFields } from "../observability/redact.js";
 import { closeRedisConnection } from "../queue/connection.js";
 import { requireApiKeyForLive } from "./liveGuard.js";
 import { buildProvider } from "./buildProvider.js";
@@ -23,16 +24,9 @@ function main(): void {
 
   const worker = startWorker(provider, {
     onSuccess: (result, batchId) => {
-      logger.info(
-        {
-          batchId,
-          traceId: result.traceId,
-          verdict: result.output.verdict,
-          durationMs: result.durationMs,
-          costUsd: result.costUsd,
-        },
-        "trace graded",
-      );
+      // safeResultFields (not a hand-picked field list) is the enforcement point for the
+      // logging policy in docs/SPEC.md §8 -- see its own doc comment for why.
+      logger.info({ batchId, ...safeResultFields(result) }, "trace graded");
     },
     onDeadLetter: (batchId, traceId, reason) => {
       logger.error({ batchId, traceId, reason }, "trace dead-lettered");

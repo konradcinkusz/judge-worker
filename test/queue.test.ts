@@ -22,7 +22,7 @@ const { enqueueBatch, closeQueue, QueueDepthExceededError } =
 const { startWorker } = await import("../src/queue/worker.js");
 const { closeRedisConnection } = await import("../src/queue/connection.js");
 const { MockJudgeProvider } = await import("../src/judge/mockJudgeProvider.js");
-const { deadLetterDepth } = await import("../src/reliability/deadLetter.js");
+const { deadLetterDepth, listDeadLetterEntries } = await import("../src/reliability/deadLetter.js");
 
 function trace(id: string): Trace {
   return {
@@ -111,6 +111,34 @@ describe("queue: producer -> worker end to end", () => {
     await enqueueBatch({ batchId: `fail-${suffix}`, traces: [trace("will-fail")] });
     await waitUntil(() => dead.includes("will-fail"), 10_000);
     expect(await deadLetterDepth()).toBeGreaterThanOrEqual(1);
+  });
+
+  it("truncates an overlong failure reason before it reaches the dead-letter record", async () => {
+    // Guards the logging policy in docs/SPEC.md §8a end to end: a third-party error message
+    // (here simulated, since this repo's own errors never do this) must not reach a persisted
+    // record, or any log downstream of it, unbounded.
+    await worker.close();
+    const longMessage = "z".repeat(500);
+    const failingProvider: JudgeProvider = {
+      name: "always-fails-verbose",
+      model: "test",
+      grade: () => Promise.reject(new Error(longMessage)),
+    };
+    worker = startWorker(failingProvider, {
+      onDeadLetter: (_batchId, traceId) => dead.push(traceId),
+    });
+
+    await enqueueBatch({
+      batchId: `verbose-fail-${suffix}`,
+      traces: [trace("will-fail-verbose")],
+    });
+    await waitUntil(() => dead.includes("will-fail-verbose"), 10_000);
+
+    const entries = await listDeadLetterEntries(100);
+    const entry = entries.find((e) => e.traceId === "will-fail-verbose");
+    expect(entry).toBeDefined();
+    expect(entry?.reason.length).toBeLessThan(longMessage.length);
+    expect(entry?.reason).toContain("truncated");
   });
 
   it("pauses the worker once MAX_RUN_COST_USD is exceeded, and resuming lets it continue", async () => {

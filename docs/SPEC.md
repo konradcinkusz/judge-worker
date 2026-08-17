@@ -184,6 +184,29 @@ runs as part of `pnpm run test` and is not a separate slow job. See
   against the mock judge (`costUsd` is always `null`; see `pricing.ts`). Proven in
   `test/queue.test.ts` and `test/costCeiling.test.ts`.
 
+## 8a. Logging and PII
+
+Trace content in this repo's own fixtures is synthetic, but a real deployment grades real
+conversation/tool-call data, and structured logs (`src/observability/logger.ts`, pino) are
+often shipped to a third-party aggregator outside this process's control. The policy:
+
+- **Safe to log at any level**: trace/batch/job IDs, scenario class, verdict, token counts,
+  cost, durations, queue depths and job counts, config values, and short enum-like fields
+  (e.g. a Messages API `stop_reason`).
+- **Never logged**: raw conversation turns, tool-call arguments or results, agent replies, the
+  rendered judge narrative/prompt (`renderTraceNarrative`), or the judge's own `rationale` and
+  per-rubric `justification` text. The last two are easy to miss — they're LLM-generated, but
+  generated _about_ the trace, so they can directly quote or closely paraphrase the underlying
+  conversation.
+- **Enforcement, not just prose**: `src/observability/redact.ts`'s `safeResultFields()` is a
+  whitelist over `JudgeResult`, used at every log call site that logs a graded result
+  (`cli/worker.ts`) instead of hand-picking fields — a field added to `JudgeResult` later does
+  not become loggable just because a call site spread the whole object in. This repo's own
+  thrown errors never interpolate trace content (only IDs and short enum-like fields), but an
+  upstream dependency's error text is not under this repo's control; `truncateForLog()` bounds
+  the dead-letter `reason` derived from it before it is persisted or logged downstream.
+- Proven in `test/redact.test.ts`.
+
 ## 9. Scale — what was and wasn't tested
 
 `pnpm run loadtest` runs the pipeline against hundreds to low thousands of synthetic traces
