@@ -1,0 +1,57 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+jobs:
+  ci:
+    runs-on: ubuntu-latest
+    services:
+      redis:
+        image: redis:7-alpine
+        ports:
+          - 6379:6379
+        options: >-
+          --health-cmd "redis-cli ping"
+          --health-interval 5s
+          --health-timeout 3s
+          --health-retries 5
+    env:
+      REDIS_URL: redis://127.0.0.1:6379
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 10
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: pnpm
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Lint
+        run: pnpm run lint
+
+      - name: Format check
+        run: pnpm run format:check
+
+      - name: Typecheck
+        run: pnpm run typecheck
+
+      - name: Build
+        run: pnpm run build
+
+      # Includes the mutation-testing suite (test/mutations.test.ts) -- gated on every PR,
+      # not run periodically, because it's 5 hand-written deterministic cases running in
+      # milliseconds rather than an automated mutation-testing sweep. See
+      # docs/architecture/DECISIONS.md ADR-2 for why this is a deliberate deviation from
+      # architecture-standards' "mutation testing is a periodic signal, not a per-PR gate"
+      # guidance rather than an oversight.
+      - name: Test (includes mutation-testing suite)
+        run: pnpm run test:coverage

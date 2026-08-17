@@ -1,0 +1,63 @@
+{
+  "traceId": "hap-001-sick-today-and-tomorrow",
+  "scenarioId": "hap-001-sick-today-and-tomorrow",
+  "scenarioClass": "happy",
+  "setting": {
+    "actor": "employee-jsmith",
+    "clock": "2026-08-17T09:00:00Z",
+    "timezone": "Europe/Warsaw"
+  },
+  "conversation": [
+    {
+      "role": "user",
+      "content": "I'm sick today and tomorrow, can you book leave for me?"
+    }
+  ],
+  "toolCalls": [
+    {
+      "position": 0,
+      "tool": "list_leave_types",
+      "kind": "read",
+      "outcome": "success",
+      "arguments": {},
+      "resultSummary": "sick, vacation, unpaid",
+      "attempts": 1
+    },
+    {
+      "position": 3,
+      "tool": "request_time_off",
+      "kind": "write",
+      "outcome": "success",
+      "arguments": {
+        "leaveType": "sick",
+        "startDate": "2026-08-17",
+        "endDate": "2026-08-18"
+      },
+      "resultSummary": "req-9001",
+      "attempts": 1
+    }
+  ],
+  "events": [
+    {
+      "position": 1,
+      "name": "confirmation.shown",
+      "attributes": {
+        "leaveType": "sick",
+        "days": 2
+      }
+    },
+    {
+      "position": 2,
+      "name": "confirmation.received",
+      "attributes": {}
+    }
+  ],
+  "turns": [
+    {
+      "index": 0,
+      "outcome": "completed",
+      "terminationReason": "decision",
+      "reply": "Booked sick leave for today and tomorrow (2 days)."
+    }
+  ]
+}
