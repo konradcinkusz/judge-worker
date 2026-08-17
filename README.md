@@ -5,6 +5,10 @@ queue and runs LLM-as-a-judge grading on them in the background — with the jud
 proven reliable via mutation testing and calibrated against human labels, not just assumed to
 work.
 
+**Full documentation:** [konradcinkusz.github.io/judge-worker](https://konradcinkusz.github.io/judge-worker/)
+(built from the same markdown in this repo — see `site/`, `_config.yml`, and
+`.github/workflows/docs.yml`).
+
 ## Why this exists
 
 I'm applying for **Senior Backend Engineer (Data Infrastructure)** at Langfuse — an

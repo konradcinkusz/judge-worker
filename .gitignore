@@ -1,9 +1,16 @@
 # Dependencies
 node_modules/
+vendor/
+.bundle/
 
 # Build output
 dist/
 *.tsbuildinfo
+
+# Jekyll docs site (see site/, _config.yml, .github/workflows/docs.yml)
+_site/
+.jekyll-cache/
+.sass-cache/
 
 # Env
 .env
