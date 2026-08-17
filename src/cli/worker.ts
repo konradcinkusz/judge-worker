@@ -4,6 +4,12 @@ import { trackActiveJobs, shutdownWithTimeout } from "../queue/shutdown.js";
 import { loadEnv } from "../config/env.js";
 import { logger } from "../observability/logger.js";
 import { safeResultFields } from "../observability/redact.js";
+import {
+  recordJobSuccess,
+  recordJobRetry,
+  recordDeadLetter,
+} from "../observability/prometheusMetrics.js";
+import { startMetricsServer } from "../observability/metricsServer.js";
 import { closeRedisConnection } from "../queue/connection.js";
 import { requireApiKeyForLive } from "./liveGuard.js";
 import { buildProvider } from "./buildProvider.js";
@@ -25,15 +31,20 @@ function main(): void {
 
   const worker = startWorker(provider, {
     onSuccess: (result, batchId) => {
+      recordJobSuccess(result);
       // safeResultFields (not a hand-picked field list) is the enforcement point for the
       // logging policy in docs/SPEC.md §8 -- see its own doc comment for why.
       logger.info({ batchId, ...safeResultFields(result) }, "trace graded");
     },
+    onRetryableFailure: () => recordJobRetry(),
     onDeadLetter: (batchId, traceId, reason) => {
+      recordDeadLetter();
       logger.error({ batchId, traceId, reason }, "trace dead-lettered");
     },
   });
   const getActiveJobs = trackActiveJobs(worker);
+  const metricsServer =
+    env.METRICS_PORT !== undefined ? startMetricsServer(env.METRICS_PORT) : undefined;
 
   const shutdown = async (): Promise<void> => {
     logger.info({ gracePeriodMs: env.SHUTDOWN_GRACE_PERIOD_MS }, "shutting down worker");
@@ -50,6 +61,9 @@ function main(): void {
         { gracePeriodMs: env.SHUTDOWN_GRACE_PERIOD_MS, stillActive },
         "shutdown grace period exceeded, forcing exit with jobs still active",
       );
+    }
+    if (metricsServer) {
+      await new Promise<void>((resolve) => metricsServer.close(() => resolve()));
     }
     await closeRedisConnection();
     process.exit(forced ? 1 : 0);

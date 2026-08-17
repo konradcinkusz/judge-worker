@@ -226,11 +226,35 @@ from OTel GenAI semantic conventions" (`model`, token counts, latency named and 
 that spec names and shapes them) -- stated here explicitly too, because it's easy to misread as
 a claim that this repo emits real OpenTelemetry spans/traces. It does not: there is no
 `@opentelemetry/sdk-node`, no span creation, no OTLP exporter, anywhere in this codebase.
-Structured pino logs are the only telemetry surface. Real span-based tracing (one span per job,
-nested spans for the judge call, exported to a collector) is a legitimate next step for a
-production deployment, not something this repo needed to demonstrate the grading pipeline
-itself, and adding it without an actual collector to send it to would be instrumentation for
-its own sake.
+Structured pino logs and the Prometheus metrics in §8b below are the only telemetry surfaces.
+Real span-based tracing (one span per job, nested spans for the judge call, exported to a
+collector) is a legitimate next step for a production deployment, not something this repo
+needed to demonstrate the grading pipeline itself, and adding it without an actual collector to
+send it to would be instrumentation for its own sake.
+
+## 8b. Metrics
+
+`src/observability/prometheusMetrics.ts` is the live counterpart to `BatchMetrics`
+(`metrics.ts`): that class summarizes one bounded CLI run (a load test, a calibration pass) as
+a JSON object printed/written at the end; this registers the same underlying per-job data
+(`JudgeResult` fields) as Prometheus counters/histograms for `cli/worker.ts` -- a long-lived
+process -- to expose live instead of only reporting a summary once it stops.
+
+- `judge_worker_jobs_graded_total{verdict}`, `judge_worker_job_retries_total`,
+  `judge_worker_jobs_dead_lettered_total`: job outcome counters, fed by the same
+  `onSuccess`/`onRetryableFailure`/`onDeadLetter` hooks `startWorker` already exposes.
+- `judge_worker_job_duration_seconds` (histogram), `judge_worker_tokens_total{direction}`,
+  `judge_worker_cost_usd_total`: per-job cost/latency/token accounting, straight from
+  `JudgeResult` -- `costUsd` is null-checked before adding, so this never advances against the
+  mock judge (no pricing entry; see `pricing.ts`).
+- Default Node process metrics (CPU, memory, event-loop lag, GC) via `prom-client`'s
+  `collectDefaultMetrics()`, registered alongside the above.
+- `METRICS_PORT` (unset by default -- `cli/worker.ts` does not bind a port at all unless this
+  is set): `src/observability/metricsServer.ts` is a plain `node:http` server, not a framework,
+  serving `GET /metrics` in Prometheus exposition format; everything else 404s. Only wired into
+  `cli/worker.ts` (a long-lived process) -- the one-shot CLIs don't start it.
+- Proven in `test/prometheusMetrics.test.ts` and `test/metricsServer.test.ts` (a real HTTP
+  server on an OS-assigned port, real `fetch()` requests, not a mocked request/response pair).
 
 ## 9. Scale — what was and wasn't tested
 

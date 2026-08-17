@@ -23,6 +23,9 @@ const envSchema = z.object({
   /** How long worker.ts's SIGINT/SIGTERM handler waits for active jobs to finish before
    *  force-exiting -- default matches Kubernetes' own terminationGracePeriodSeconds default. */
   SHUTDOWN_GRACE_PERIOD_MS: z.coerce.number().int().positive().default(30_000),
+  /** Optional; unset means the worker does not start a metrics HTTP server at all. Only
+   *  meaningful for cli/worker.ts (a long-lived process) -- the one-shot CLIs don't use it. */
+  METRICS_PORT: z.coerce.number().int().positive().optional(),
   LOG_LEVEL: z.enum(["fatal", "error", "warn", "info", "debug", "trace"]).default("info"),
 });
 
