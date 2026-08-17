@@ -1,6 +1,6 @@
 import { describe, expect, it, afterAll } from "vitest";
 import type { Trace } from "../src/types/trace.js";
-import type { JudgeResult } from "../src/types/judge.js";
+import type { JudgeResult, JudgeOutput } from "../src/types/judge.js";
 import type { JudgeProvider } from "../src/judge/judgeProvider.js";
 
 // Each test file gets an isolated module registry under Vitest's default `isolate: true`, so
@@ -14,14 +14,22 @@ process.env["WORKER_CONCURRENCY"] = "3";
 process.env["JOB_ATTEMPTS"] = "2";
 process.env["JOB_BACKOFF_MS"] = "20";
 process.env["QUEUE_DEPTH_LIMIT"] = "10";
+process.env["MAX_RUN_COST_USD"] = "2";
 process.env["LOG_LEVEL"] = "error";
 
 const { enqueueBatch, closeQueue, QueueDepthExceededError } =
   await import("../src/queue/producer.js");
 const { startWorker } = await import("../src/queue/worker.js");
+const { trackActiveJobs, shutdownWithTimeout } = await import("../src/queue/shutdown.js");
 const { closeRedisConnection } = await import("../src/queue/connection.js");
 const { MockJudgeProvider } = await import("../src/judge/mockJudgeProvider.js");
-const { deadLetterDepth } = await import("../src/reliability/deadLetter.js");
+const {
+  deadLetterDepth,
+  listDeadLetterEntries,
+  requeueDeadLetterJob,
+  requeueAllDeadLetterJobs,
+  DeadLetterJobNotFoundError,
+} = await import("../src/reliability/deadLetter.js");
 
 function trace(id: string): Trace {
   return {
@@ -110,5 +118,241 @@ describe("queue: producer -> worker end to end", () => {
     await enqueueBatch({ batchId: `fail-${suffix}`, traces: [trace("will-fail")] });
     await waitUntil(() => dead.includes("will-fail"), 10_000);
     expect(await deadLetterDepth()).toBeGreaterThanOrEqual(1);
+  });
+
+  it("truncates an overlong failure reason before it reaches the dead-letter record", async () => {
+    // Guards the logging policy in docs/SPEC.md §8a end to end: a third-party error message
+    // (here simulated, since this repo's own errors never do this) must not reach a persisted
+    // record, or any log downstream of it, unbounded.
+    await worker.close();
+    const longMessage = "z".repeat(500);
+    const failingProvider: JudgeProvider = {
+      name: "always-fails-verbose",
+      model: "test",
+      grade: () => Promise.reject(new Error(longMessage)),
+    };
+    worker = startWorker(failingProvider, {
+      onDeadLetter: (_batchId, traceId) => dead.push(traceId),
+    });
+
+    await enqueueBatch({
+      batchId: `verbose-fail-${suffix}`,
+      traces: [trace("will-fail-verbose")],
+    });
+    await waitUntil(() => dead.includes("will-fail-verbose"), 10_000);
+
+    const entries = await listDeadLetterEntries(100);
+    const entry = entries.find((e) => e.traceId === "will-fail-verbose");
+    expect(entry).toBeDefined();
+    expect(entry?.reason.length).toBeLessThan(longMessage.length);
+    expect(entry?.reason).toContain("truncated");
+  });
+
+  it("requeues a dead-lettered job onto the main queue, and it succeeds against a healthy provider", async () => {
+    await worker.close();
+    const failingProvider: JudgeProvider = {
+      name: "always-fails-requeue-test",
+      model: "test",
+      grade: () => Promise.reject(new Error("will be requeued")),
+    };
+    worker = startWorker(failingProvider, {
+      onDeadLetter: (_batchId, traceId) => dead.push(traceId),
+    });
+    await enqueueBatch({ batchId: `requeue-src-${suffix}`, traces: [trace("will-requeue")] });
+    await waitUntil(() => dead.includes("will-requeue"), 10_000);
+
+    const beforeEntries = await listDeadLetterEntries(100);
+    const entry = beforeEntries.find((e) => e.traceId === "will-requeue");
+    expect(entry).toBeDefined();
+
+    // Swap to a healthy worker before requeuing, so the requeued job actually succeeds --
+    // matches the real operator workflow of "fix the root cause, then requeue".
+    await worker.close();
+    worker = startWorker(new MockJudgeProvider(), {
+      onSuccess: (result) => succeeded.push(result),
+      onDeadLetter: (_batchId, traceId) => dead.push(traceId),
+    });
+
+    const requeued = await requeueDeadLetterJob(entry!.jobId);
+    expect(requeued.traceId).toBe("will-requeue");
+    expect(requeued.reason).toBe("will be requeued"); // original reason returned, not carried onto the new job
+
+    await waitUntil(() => succeeded.some((r) => r.traceId === "will-requeue"), 10_000);
+
+    const afterEntries = await listDeadLetterEntries(100);
+    expect(afterEntries.find((e) => e.jobId === entry!.jobId)).toBeUndefined();
+  });
+
+  it("requeueDeadLetterJob throws DeadLetterJobNotFoundError for an unknown job id", async () => {
+    await expect(requeueDeadLetterJob(`does-not-exist-${suffix}`)).rejects.toThrow(
+      DeadLetterJobNotFoundError,
+    );
+  });
+
+  it("requeueAllDeadLetterJobs requeues every current entry", async () => {
+    const existingBefore = await deadLetterDepth();
+
+    await worker.close();
+    const failingProvider: JudgeProvider = {
+      name: "always-fails-bulk-requeue-test",
+      model: "test",
+      grade: () => Promise.reject(new Error("bulk requeue source")),
+    };
+    worker = startWorker(failingProvider, {
+      onDeadLetter: (_batchId, traceId) => dead.push(traceId),
+    });
+    await enqueueBatch({
+      batchId: `bulk-requeue-src-${suffix}`,
+      traces: [trace("bulk-1"), trace("bulk-2")],
+    });
+    await waitUntil(() => dead.includes("bulk-1") && dead.includes("bulk-2"), 10_000);
+    expect(await deadLetterDepth()).toBe(existingBefore + 2);
+
+    await worker.close();
+    worker = startWorker(new MockJudgeProvider(), {
+      onSuccess: (result) => succeeded.push(result),
+      onDeadLetter: (_batchId, traceId) => dead.push(traceId),
+    });
+
+    const count = await requeueAllDeadLetterJobs();
+    expect(count).toBe(existingBefore + 2);
+
+    await waitUntil(
+      () =>
+        succeeded.some((r) => r.traceId === "bulk-1") &&
+        succeeded.some((r) => r.traceId === "bulk-2"),
+      10_000,
+    );
+    expect(await deadLetterDepth()).toBe(0);
+  });
+
+  it("trackActiveJobs adds a job while active and removes it once completed", async () => {
+    // A brief but real delay, not MockJudgeProvider's instant grading -- an instant job can
+    // move from "active" to "completed" faster than a 25ms poll ever observes it, which would
+    // make this test pass even if trackActiveJobs never added the job in the first place.
+    await worker.close();
+    const briefOutput: JudgeOutput = {
+      verdict: "pass",
+      scores: [{ rubric: "grounding", score: 3, justification: "ok" }],
+      confidence: "high",
+      rationale: "ok",
+    };
+    const briefDelayProvider: JudgeProvider = {
+      name: "brief-delay",
+      model: "test",
+      grade: () =>
+        new Promise((resolve) =>
+          setTimeout(() => resolve({ output: briefOutput, inputTokens: 1, outputTokens: 1 }), 150),
+        ),
+    };
+    worker = startWorker(briefDelayProvider, { onSuccess: (result) => succeeded.push(result) });
+    const getActiveJobs = trackActiveJobs(worker);
+
+    await enqueueBatch({ batchId: `track-${suffix}`, traces: [trace("track-me")] });
+    await waitUntil(() => getActiveJobs().some((j) => j.traceId === "track-me"), 10_000);
+    await waitUntil(() => !getActiveJobs().some((j) => j.traceId === "track-me"), 10_000);
+    expect(succeeded.some((r) => r.traceId === "track-me")).toBe(true);
+  });
+
+  it("shutdownWithTimeout closes cleanly (not forced) when the active job finishes in time", async () => {
+    await worker.close();
+    worker = startWorker(new MockJudgeProvider(), {
+      onSuccess: (result) => succeeded.push(result),
+    });
+    const getActiveJobs = trackActiveJobs(worker);
+
+    await enqueueBatch({ batchId: `clean-shutdown-${suffix}`, traces: [trace("clean-shutdown")] });
+    await waitUntil(() => succeeded.some((r) => r.traceId === "clean-shutdown"), 10_000);
+
+    const result = await shutdownWithTimeout(worker, 10_000, getActiveJobs);
+    expect(result.forced).toBe(false);
+    expect(result.stillActive).toEqual([]);
+
+    worker = startWorker(new MockJudgeProvider(), {
+      onSuccess: (result) => succeeded.push(result),
+      onDeadLetter: (_batchId, traceId) => dead.push(traceId),
+    });
+  });
+
+  it("shutdownWithTimeout forces after the grace period and reports the still-active job", async () => {
+    await worker.close();
+    let resolveHungJob: (() => void) | undefined;
+    const hungOutput: JudgeOutput = {
+      verdict: "pass",
+      scores: [{ rubric: "grounding", score: 3, justification: "ok" }],
+      confidence: "high",
+      rationale: "ok",
+    };
+    const hungProvider: JudgeProvider = {
+      name: "hangs-until-released",
+      model: "test",
+      grade: () =>
+        new Promise((resolve) => {
+          resolveHungJob = () => resolve({ output: hungOutput, inputTokens: 1, outputTokens: 1 });
+        }),
+    };
+    worker = startWorker(hungProvider);
+    const getActiveJobs = trackActiveJobs(worker);
+
+    await enqueueBatch({ batchId: `hung-${suffix}`, traces: [trace("will-hang")] });
+    await waitUntil(() => getActiveJobs().some((j) => j.traceId === "will-hang"), 10_000);
+
+    // Grace period (200ms) is deliberately much shorter than how long the job will actually
+    // take to resolve (until resolveHungJob() below is called) -- this is what "a live judge
+    // call that never resolves" looks like from the shutdown path's point of view.
+    const result = await shutdownWithTimeout(worker, 200, getActiveJobs);
+    expect(result.forced).toBe(true);
+    expect(result.stillActive).toHaveLength(1);
+    expect(result.stillActive[0]?.traceId).toBe("will-hang");
+    expect(result.stillActive[0]?.batchId).toBe(`hung-${suffix}`);
+    expect(typeof result.stillActive[0]?.jobId).toBe("string");
+
+    // Release the hung job so it doesn't linger indefinitely in Redis, then replace `worker`
+    // with a fresh instance for later tests -- the raced-away worker.close() call above is
+    // still resolving in the background against the old instance, and BullMQ's close() stops
+    // it from picking up further jobs immediately (not just once that promise settles), so a
+    // new worker on the same queue name doesn't race it for work.
+    resolveHungJob?.();
+    await new Promise((resolve) => setTimeout(resolve, 50));
+    worker = startWorker(new MockJudgeProvider(), {
+      onSuccess: (result) => succeeded.push(result),
+      onDeadLetter: (_batchId, traceId) => dead.push(traceId),
+    });
+  });
+
+  it("pauses the worker once MAX_RUN_COST_USD is exceeded, and resuming lets it continue", async () => {
+    await worker.close();
+    const output: JudgeOutput = {
+      verdict: "pass",
+      scores: [{ rubric: "grounding", score: 3, justification: "ok" }],
+      confidence: "high",
+      rationale: "ok",
+    };
+    const pricedProvider: JudgeProvider = {
+      name: "priced-fake",
+      model: "claude-haiku-4-5", // priced at $1.00/million input tokens (observability/pricing.ts)
+      grade: () => Promise.resolve({ output, inputTokens: 1_000_000, outputTokens: 0 }), // costUsd = $1.00 exactly
+    };
+    const priced: JudgeResult[] = [];
+    worker = startWorker(pricedProvider, { onSuccess: (result) => priced.push(result) });
+
+    // WORKER_CONCURRENCY is 3 for this file; enqueueing exactly 3 means all three are already
+    // in flight by the time the second one's completion crosses MAX_RUN_COST_USD=2 -- no race
+    // against a 4th job that may or may not start before the pause takes effect.
+    await enqueueBatch({
+      batchId: `cost-${suffix}`,
+      traces: Array.from({ length: 3 }, (_, i) => trace(`cost-${i}`)),
+    });
+    await waitUntil(() => worker.isPaused(), 10_000);
+    expect(priced.length).toBe(3); // all 3 already-in-flight jobs still finish -- a soft cap
+
+    // A trace enqueued after the pause must not be picked up while paused.
+    await enqueueBatch({ batchId: `cost-after-${suffix}`, traces: [trace("cost-after")] });
+    await new Promise((resolve) => setTimeout(resolve, 500));
+    expect(priced.length).toBe(3);
+
+    worker.resume();
+    await waitUntil(() => priced.length === 4, 10_000);
+    expect(priced.map((r) => r.traceId)).toContain("cost-after");
   });
 });

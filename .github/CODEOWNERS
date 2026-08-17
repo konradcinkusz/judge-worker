@@ -1,0 +1,28 @@
+# CODEOWNERS — who must review what.
+#
+# Solo-maintained today, but ownership is stated per path (not just a repo-wide catch-all) so
+# adding a second maintainer later is a one-line change per area, not a rewrite.
+#
+# Syntax: last matching pattern wins, so the catch-all is first.
+
+# ─── Everything ──────────────────────────────────────────────────────────────
+*                               @konradcinkusz
+
+# ─── The judge contract ──────────────────────────────────────────────────────
+# The spec and the judge's own grading logic/prompt are the specification this repo exists to
+# demonstrate. A change to any of them is a change to what "correct" means, not a routine
+# code change.
+/docs/SPEC.md                   @konradcinkusz
+/src/judge/                     @konradcinkusz
+/src/types/judge.ts             @konradcinkusz
+/MUTATIONS.md                   @konradcinkusz
+
+# ─── Architecture decisions ──────────────────────────────────────────────────
+/docs/architecture/              @konradcinkusz
+
+# ─── Security-relevant configuration ─────────────────────────────────────────
+/.github/workflows/             @konradcinkusz
+/.github/CODEOWNERS             @konradcinkusz
+/Dockerfile                     @konradcinkusz
+/package.json                   @konradcinkusz
+/pnpm-lock.yaml                 @konradcinkusz

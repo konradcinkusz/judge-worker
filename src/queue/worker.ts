@@ -9,6 +9,8 @@ import type { JudgeJobData } from "./producer.js";
 import { traceSchema } from "../types/trace.js";
 import type { JudgeResult } from "../types/judge.js";
 import type { DeadLetterJobData } from "../reliability/deadLetter.js";
+import { RunCostTracker } from "../reliability/costCeiling.js";
+import { redactError } from "../observability/redact.js";
 
 export interface WorkerHooks {
   onSuccess?: (result: JudgeResult, batchId: string) => void;
@@ -32,8 +34,12 @@ export function startWorker(
   const deadLetterQueue = new Queue<DeadLetterJobData>(deadLetterQueueName(), {
     connection: redisConnection(),
   });
+  const costTracker = new RunCostTracker(env.MAX_RUN_COST_USD);
 
-  const worker = new Worker<JudgeJobData>(
+  // The processor closure below pauses the very Worker instance it's running in once the cost
+  // ceiling trips -- safe to reference `worker` here because the processor only runs
+  // asynchronously, well after this declaration has finished initializing.
+  const worker: Worker<JudgeJobData> = new Worker<JudgeJobData>(
     judgeQueueName(),
     async (job: Job<JudgeJobData>) => {
       // Anti-corruption boundary: re-validate at the point of consumption, not just at
@@ -41,6 +47,13 @@ export function startWorker(
       const trace = traceSchema.parse(job.data.trace);
       const result = await gradeTrace(provider, trace);
       hooks.onSuccess?.(result, job.data.batchId);
+      if (costTracker.record(result.costUsd) && !worker.isPaused()) {
+        logger.warn(
+          { totalCostUsd: costTracker.total, maxRunCostUsd: env.MAX_RUN_COST_USD },
+          "run cost ceiling exceeded, pausing worker (jobs already in flight will still finish)",
+        );
+        void worker.pause();
+      }
       return result;
     },
     { connection: redisConnection(), concurrency: env.WORKER_CONCURRENCY },
@@ -49,22 +62,32 @@ export function startWorker(
   worker.on("failed", (job, err) => {
     if (!job) return;
     const attemptsExhausted = job.attemptsMade >= (job.opts.attempts ?? 1);
+    // Bounded because err.message may originate from a third-party dependency (the Anthropic
+    // SDK, ioredis) whose error text is not under this repo's control -- see the logging
+    // policy in docs/SPEC.md §8a. This repo's own thrown errors never interpolate trace
+    // content, only IDs and short enum-like fields, so truncation never loses signal there.
+    // One redactError() call is the single source of truth for the bounded message, reused
+    // for the dead-letter record, the hook callbacks, and the direct log line below --
+    // redactError() also rebuilds .stack from the same bounded message, since Node's default
+    // stack format repeats the full original message in its own first line.
+    const loggedErr = redactError(err);
+    const reason = loggedErr.message;
     if (attemptsExhausted) {
       void deadLetterQueue
         .add("dead-letter", {
           batchId: job.data.batchId,
           trace: job.data.trace,
-          reason: err.message,
+          reason,
         })
-        .then(() => hooks.onDeadLetter?.(job.data.batchId, job.data.trace.traceId, err.message));
+        .then(() => hooks.onDeadLetter?.(job.data.batchId, job.data.trace.traceId, reason));
       logger.error(
-        { traceId: job.data.trace.traceId, batchId: job.data.batchId, err },
+        { traceId: job.data.trace.traceId, batchId: job.data.batchId, err: loggedErr },
         "job dead-lettered after exhausting retries",
       );
     } else {
       hooks.onRetryableFailure?.(err, job.data.batchId, job.data.trace.traceId);
       logger.warn(
-        { traceId: job.data.trace.traceId, attempt: job.attemptsMade, err },
+        { traceId: job.data.trace.traceId, attempt: job.attemptsMade, err: loggedErr },
         "job attempt failed, will retry",
       );
     }

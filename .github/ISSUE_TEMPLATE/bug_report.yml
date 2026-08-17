@@ -1,0 +1,82 @@
+name: Bug report
+description: Something behaves differently from what docs/SPEC.md says it should, or crashes/errors unexpectedly.
+title: "bug: "
+labels: ["bug"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        A bug report without a repro and an impact statement is hard to act on. Both fields
+        below are required for that reason.
+
+  - type: input
+    id: version
+    attributes:
+      label: Version
+      description: Commit SHA, or "main at <date>".
+      placeholder: 4f2a1c9 / main at 2026-08-20
+    validations:
+      required: true
+
+  - type: dropdown
+    id: mode
+    attributes:
+      label: Mode
+      description: Which judge provider was active?
+      options:
+        - Mock judge (the default; zero credentials)
+        - Live judge (--live, real Anthropic API calls)
+        - Not applicable / not sure
+    validations:
+      required: true
+
+  - type: textarea
+    id: expected
+    attributes:
+      label: Expected behavior
+      description: >-
+        Quote the line of `docs/SPEC.md` this contradicts, if there is one. If there isn't,
+        say so — an unspecified behavior is a spec gap, which is worth reporting too but is a
+        different kind of finding than a bug.
+    validations:
+      required: true
+
+  - type: textarea
+    id: actual
+    attributes:
+      label: What actually happened
+    validations:
+      required: true
+
+  - type: textarea
+    id: repro
+    attributes:
+      label: Reproduction
+      description: >-
+        Exact commands from a fresh clone. If you have log output, paste it rather than
+        describing it.
+      placeholder: |
+        1. git clone ... && pnpm install
+        2. docker compose up redis -d
+        3. pnpm run ingest
+        4. pnpm run worker
+        5. ...
+      render: shell
+    validations:
+      required: true
+
+  - type: textarea
+    id: impact
+    attributes:
+      label: Impact
+      description: What's affected and what's lost — a silently wrong verdict/score is worse than a crash.
+    validations:
+      required: true
+
+  - type: checkboxes
+    id: hygiene
+    attributes:
+      label: Before submitting
+      options:
+        - label: This report contains no API keys, tokens, or real personal/conversation data.
+          required: true

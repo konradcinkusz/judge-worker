@@ -1,0 +1,73 @@
+# gitleaks configuration — judge-worker
+#
+# Runs in CI (.github/workflows/secret-scan.yml) on every PR/push and weekly on a schedule.
+#
+# If a secret ever does land here: ROTATE FIRST, clean history second. This repository's
+# commits are visible to anyone with access the moment they're pushed, so scrubbing without
+# rotating is theatre.
+
+title = "judge-worker secret scanning"
+
+[extend]
+# Start from gitleaks' ~180 upstream provider rules (AWS, GitHub, Slack, Stripe, OpenAI,
+# Anthropic, ...) and add only the shapes this repo can plausibly leak that upstream misses.
+useDefault = true
+
+# ─────────────────────────────────────────────────────────────────────────────
+# Repository-specific rules
+#
+# Every rule below corresponds to a variable documented in .env.example. When a new secret
+# is introduced, it gets a rule here in the same commit — a secret with no detection rule is
+# a secret nobody will notice leaving.
+#
+# TESTING A NEW RULE: useDefault = true inherits the upstream global allowlist, which
+# includes a stopword list — a placeholder like "sk-ant-abcdefghijklmnop" is suppressed by
+# design, since it isn't real. Verify a new rule against a value of realistic entropy, e.g.
+#     head -c 32 /dev/urandom | base64 | tr -d '+/=' | head -c 32
+# ─────────────────────────────────────────────────────────────────────────────
+
+[[rules]]
+id = "anthropic-api-key"
+description = "Anthropic API key (sk-ant- prefix) -- ANTHROPIC_API_KEY in .env.example"
+regex = '''\bsk-ant-[A-Za-z0-9_\-]{20,}'''
+keywords = ["sk-ant-"]
+tags = ["anthropic", "llm", "provider"]
+
+[[rules]]
+id = "redis-url-with-credentials"
+description = "A REDIS_URL with an embedded password (redis[s]://[:]password@host)"
+regex = '''(?i)rediss?://[^:@/\s]*:[^@/\s]{4,}@[^\s"'`]+'''
+keywords = ["redis://", "rediss://"]
+tags = ["redis", "connection-string"]
+
+# ─────────────────────────────────────────────────────────────────────────────
+# Allowlist
+#
+# Two rules govern additions here:
+#   1. Allowlist a PATH only when the file cannot contain a real secret by construction
+#      (a placeholder file, a lockfile of integrity hashes).
+#   2. Allowlist a VALUE only when it is a documented placeholder shape.
+# Never allowlist a finding by adding the real value to a regex.
+# ─────────────────────────────────────────────────────────────────────────────
+
+[allowlist]
+description = "Placeholder documentation, lockfiles, and this configuration file itself"
+
+paths = [
+  # This file quotes secret-shaped regexes by necessity.
+  '''\.gitleaks\.toml$''',
+  # Documented placeholder set -- every value in it is empty or an obvious stand-in.
+  '''\.env\.example$''',
+  # Subresource-integrity hashes and gem checksums are indistinguishable from base64 secrets.
+  '''pnpm-lock\.yaml$''',
+  '''Gemfile\.lock$''',
+  # Build output and dependencies are never reviewed and never committed.
+  '''(^|/)(dist|node_modules|_site|\.jekyll-cache)/''',
+]
+
+regexes = [
+  # Documented placeholder shapes. Kept deliberately narrow.
+  '''(?i)(REPLACE[_-]?ME|CHANGE[_-]?ME|YOUR[_-][A-Z_]+[_-]HERE|<[a-z-]+>|\$\{[A-Z_]+\}|xxxxx+)''',
+  # Documentation examples must use RFC 2606 reserved domains.
+  '''(example|test|invalid|localhost)\.(com|org|net|local)''',
+]

@@ -35,7 +35,7 @@ with real numbers from real runs, not projections.
 
 ```bash
 pnpm install
-docker compose up -d          # Redis only
+docker compose up redis -d     # Redis only
 pnpm run ingest                # loads fixtures/traces/*.json, enqueues batches
 pnpm run worker                # grades every job with the mock judge, no API key needed
 ```
@@ -47,12 +47,23 @@ export ANTHROPIC_API_KEY=sk-ant-...
 pnpm run worker -- --live
 ```
 
+Fully containerized, no local Node/pnpm at all — `docker compose up` (no service name) also
+runs `ingest` and `worker` (`Dockerfile`, multi-stage: `pnpm run build`, then
+`dist/cli/worker.js` in a slim runtime image), doing the same ingest-then-grade demo end to
+end:
+
+```bash
+docker compose up --build
+```
+
 Other entry points:
 
 ```bash
 pnpm run calibrate                    # Cohen's kappa vs. data/calibration/human-labels.jsonl
 pnpm run calibrate -- --live          # same, but grades with the real LLM judge
 pnpm run loadtest -- --count 1000     # synthetic-trace load test, prints a real summary
+pnpm run dlq -- list                  # inspect the dead-letter queue
+pnpm run dlq -- requeue <jobId>       # move one dead-lettered job back onto the main queue
 pnpm run test                         # full suite, incl. the mutation-testing harness
 ```
 
@@ -116,5 +127,5 @@ pnpm run build
 ```
 
 The queue integration test (`test/queue.test.ts`) needs a reachable Redis
-(`REDIS_URL`, default `redis://127.0.0.1:6379`) — `docker compose up -d` or a local
+(`REDIS_URL`, default `redis://127.0.0.1:6379`) — `docker compose up redis -d` or a local
 `redis-server` both work; CI runs it against a `redis:7-alpine` service container.

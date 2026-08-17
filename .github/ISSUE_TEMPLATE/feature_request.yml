@@ -1,0 +1,70 @@
+name: Feature request
+description: Propose a capability, a spec change, or a change of scope.
+title: "feat: "
+labels: ["enhancement"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        This repo has a deliberately narrow scope (see the README's "What this is not"). A
+        request that lands on one of those non-goals will likely be closed with a pointer
+        there rather than implemented — that's the non-goal doing its job, not a rejection.
+
+  - type: dropdown
+    id: kind
+    attributes:
+      label: What kind of change is this?
+      options:
+        - Judge grading behavior — rubric, scenario taxonomy, calibration
+        - Queue & reliability — backpressure, retries, dead-letter, shutdown
+        - Observability — logging, metrics, cost accounting
+        - CI / tooling / Docker
+        - Documentation (SPEC, FINDINGS, README)
+        - Other infra
+    validations:
+      required: true
+
+  - type: textarea
+    id: problem
+    attributes:
+      label: The problem
+      description: >-
+        What's not possible, or what goes wrong, today. Describe the situation, not the
+        solution — the solution field is next, and separating them makes alternatives easier
+        to compare.
+    validations:
+      required: true
+
+  - type: textarea
+    id: proposal
+    attributes:
+      label: Proposed change
+    validations:
+      required: true
+
+  - type: textarea
+    id: alternatives
+    attributes:
+      label: Alternatives considered, and why they lose
+      description: '"I considered X and rejected it because Y" is worth more than just the proposal.'
+
+  - type: textarea
+    id: verification
+    attributes:
+      label: How would this be verified?
+      description: >-
+        What test or real run would prove it works? A behavior with no way to verify it is a
+        behavior nobody can defend after the next refactor.
+    validations:
+      required: true
+
+  - type: checkboxes
+    id: scope
+    attributes:
+      label: Scope check
+      description: The README's "What this is not". Tick anything this request touches.
+      options:
+        - label: A tracing platform, ClickHouse deployment, or competing with Langfuse
+        - label: A claim of production-scale throughput (vs. the current small-scale demo)
+        - label: Something built for or implying endorsement by Langfuse
+        - label: None of these

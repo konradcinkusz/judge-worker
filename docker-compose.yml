@@ -13,5 +13,36 @@ services:
     volumes:
       - judge-worker-redis-data:/data
 
+  # Fully containerized version of the README's Quick start (`pnpm run ingest && pnpm run
+  # worker`) -- `docker compose up` alone loads the committed fixtures, enqueues them, and
+  # grades every one with the mock judge (no API key needed), no local Node/pnpm required.
+  # Both services share one built image (see `image:` below) so it's only built once.
+  ingest:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    image: judge-worker:local
+    depends_on:
+      redis:
+        condition: service_healthy
+    environment:
+      REDIS_URL: redis://redis:6379
+    command: ["dist/cli/ingest.js"]
+
+  worker:
+    image: judge-worker:local
+    depends_on:
+      redis:
+        condition: service_healthy
+      ingest:
+        condition: service_completed_successfully
+    environment:
+      REDIS_URL: redis://redis:6379
+    command: ["dist/cli/worker.js"]
+    # Longer than SHUTDOWN_GRACE_PERIOD_MS's default (30s, see src/config/env.ts) -- Compose's
+    # own default (10s) would SIGKILL the container before the worker's own graceful-shutdown
+    # timeout (issue #11) ever gets a chance to run on its own terms.
+    stop_grace_period: 35s
+
 volumes:
   judge-worker-redis-data:

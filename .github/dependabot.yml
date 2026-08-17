@@ -1,0 +1,61 @@
+# Dependabot — dependency updates that don't depend on anyone remembering.
+#
+# Three ecosystems in this repo:
+#   npm            — root package.json/pnpm-lock.yaml: production deps (@anthropic-ai/sdk,
+#                    bullmq, ioredis, pino, prom-client, zod) and the dev toolchain (eslint,
+#                    vitest, typescript, prettier, tsx).
+#   bundler        — Gemfile/Gemfile.lock for the Jekyll docs site (site/, _config.yml,
+#                    .github/workflows/docs.yml — see PR #2).
+#   github-actions — pinned action versions in .github/workflows/*.yml.
+#
+# Grouping policy: minor/patch npm updates land as one PR per week, not a stream of
+# single-package PRs nobody reviews. Majors arrive alone — those are the ones that need a
+# human to actually read the changelog before merging.
+
+version: 2
+
+updates:
+  - package-ecosystem: npm
+    directory: "/"
+    schedule:
+      interval: weekly
+      day: monday
+    open-pull-requests-limit: 10
+    commit-message:
+      prefix: "chore(deps)"
+      include: scope
+    labels:
+      - dependencies
+      - javascript
+    groups:
+      minor-and-patch:
+        applies-to: version-updates
+        update-types:
+          - minor
+          - patch
+
+  - package-ecosystem: bundler
+    directory: "/"
+    schedule:
+      interval: weekly
+      day: monday
+    open-pull-requests-limit: 5
+    commit-message:
+      prefix: "chore(deps)"
+      include: scope
+    labels:
+      - dependencies
+      - docs
+
+  - package-ecosystem: github-actions
+    directory: "/"
+    schedule:
+      interval: weekly
+      day: monday
+    open-pull-requests-limit: 5
+    commit-message:
+      prefix: "chore(ci)"
+      include: scope
+    labels:
+      - dependencies
+      - ci

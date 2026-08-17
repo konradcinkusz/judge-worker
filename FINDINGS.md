@@ -119,35 +119,113 @@ $ pnpm run loadtest -- --count 1000 --batch-size 50
   "failed": 0,
   "deadLettered": 0,
   "totalTraces": 1000,
-  "durationMs": 466,
-  "throughputPerSec": 2145.9,
+  "durationMs": 499,
+  "throughputPerSec": 2004.008016032064,
   "latencyMsP50": 0,
   "latencyMsP95": 0,
   "latencyMsMax": 1,
   "totalInputTokens": 198033,
   "totalOutputTokens": 50000,
   "totalCostUsd": null,
-  "deadLetterQueueDepth": 0
+  "deadLetterQueueDepth": 0,
+  "backpressure": {
+    "shedBatches": 0,
+    "shedTraces": 0
+  }
 }
 ```
 
 1,000 synthetic traces (`src/ingestion/syntheticTraces.ts`, spread evenly across all five
 scenario classes with roughly a third carrying a deliberate defect), batched at 50 traces per
-batch, graded by the mock judge at the default concurrency of 5, completed in 466ms with zero
+batch, graded by the mock judge at the default concurrency of 5, completed in 499ms with zero
 failures and zero dead-lettered jobs. `totalCostUsd` is `null` because the mock judge's model
 id (`mock-heuristic-v1`) has no entry in the pricing table (`src/observability/pricing.ts`)
-by design — cost accounting only applies real numbers to real API calls.
+by design — cost accounting only applies real numbers to real API calls. `backpressure` is
+zero here because 1,000 traces never comes close to the default `QUEUE_DEPTH_LIMIT` of 2,000 —
+see "Backpressure" below for a run that actually trips it.
 
 **Read this number for what it is, not more.** The mock judge does no I/O and no real
-inference — the 466ms is almost entirely Redis/BullMQ overhead for 1,000 small jobs, not
+inference — the 499ms is almost entirely Redis/BullMQ overhead for 1,000 small jobs, not
 judge latency. This proves the pipeline's batching, concurrency, and job bookkeeping behave
 correctly at this scale; it says nothing about throughput with a real LLM in the loop, where
-per-call latency and provider rate limits — not queue mechanics — would dominate. The
-queue-depth backpressure guard (`QUEUE_DEPTH_LIMIT`) is proven directly in
-`test/queue.test.ts` rather than in this load test, because the mock judge drains jobs faster
-than 1,000-trace ingestion can build up a meaningful backlog; a slower, real judge would make
-that shed path visible in a load test the way it is in the unit test.
+per-call latency and provider rate limits — not queue mechanics — would dominate.
 
 This was run against one thousand synthetic traces on a single machine. It was not run
 against real production trace volume, against a real Redis cluster, or under sustained
 multi-hour load, and nothing in this repo should be read as a claim that it was.
+
+## Backpressure
+
+The load test can exercise `QUEUE_DEPTH_LIMIT` for real now, not just via the mocked
+`queue.count()` in `test/queue.test.ts`. `pnpm run loadtest` gained two flags:
+`--queue-depth-limit` overrides the limit for the run, and `--simulate-latency-ms` wraps the
+chosen judge provider in an artificial per-job delay
+(`src/judge/latencyInjectingJudgeProvider.ts`) — the mock judge alone drains jobs faster than
+ingestion can build up a meaningful backlog, so proving the shed path for real means slowing
+consumption down relative to production, the way a real LLM call would.
+
+Wiring this up exposed two real bugs in the process, both worth stating plainly since either
+would silently defeat backpressure testing for anyone else building on this code:
+
+- **The producer needs its own Redis connection.** The load test runs the producer and the
+  worker in one process. The first attempt had them share the existing `redisConnection()`
+  singleton, and every run showed `shedBatches: 0` no matter how aggressive the settings —
+  production was being silently paced down to consumption speed by the worker's job-fetch
+  traffic interleaving with the producer's `count()`/`addBulk()` calls on the same connection.
+  `cli/loadtest.ts` now opens a second, dedicated connection for its own enqueue path
+  (`producerConnection` / `producerQueue`), matching how ingestion and the worker are actually
+  separate processes with independent connections in production.
+- **`--queue-depth-limit` cannot be threaded through `process.env` + `loadEnv()`.** The second
+  attempt set `process.env.QUEUE_DEPTH_LIMIT` at the top of `main()` before calling `loadEnv()`
+  — still `shedBatches: 0`. `loadEnv()` memoizes on first call, and `observability/logger.ts`
+  already calls it at module scope (to read `LOG_LEVEL`) as an import side effect, which
+  happens before any CLI's `main()` runs at all. `enqueueBatch()` now takes an explicit
+  `queueDepthLimit` override (`EnqueueBatchOptions`, `src/queue/producer.ts`) instead of
+  relying on env-var timing.
+
+With both fixed, a run designed to trip the guard actually trips it:
+
+```
+$ pnpm run loadtest -- --count 600 --batch-size 20 --queue-depth-limit 100 --simulate-latency-ms 150
+{
+  "succeeded": 100,
+  "failed": 0,
+  "deadLettered": 0,
+  "totalTraces": 100,
+  "durationMs": 3374,
+  "throughputPerSec": 29.638411381149968,
+  "latencyMsP50": 151,
+  "latencyMsP95": 152,
+  "latencyMsMax": 154,
+  "totalInputTokens": 19773,
+  "totalOutputTokens": 5000,
+  "totalCostUsd": null,
+  "deadLetterQueueDepth": 0,
+  "backpressure": {
+    "shedBatches": 25,
+    "shedTraces": 500
+  }
+}
+```
+
+600 synthetic traces batched at 20 per batch (30 batches), a queue-depth limit of 100, and a
+150ms artificial delay per graded trace (throttling consumption to roughly
+concurrency(5) / 150ms ≈ 33 traces/sec). The dedicated producer connection enqueues all 30
+batches in well under a second — far faster than the throttled worker can drain them — so the
+first 5 batches (100 traces) fit under the limit and every batch after that is shed the
+instant queue depth is within one batch of it. The CLI logs each shed batch's exact reason,
+e.g.:
+
+```
+refusing to enqueue batch loadtest-1786965730937-0005: queue depth 95 + 20 traces would exceed QUEUE_DEPTH_LIMIT=100
+```
+
+100 traces were actually graded, 500 were shed — both counts real, both reproducible with the
+command above on this commit.
+
+**Read this number for what it is, not more, either.** This proves `enqueueBatch()`'s depth
+check fires correctly under genuine concurrent load, not a mocked `queue.count()`. It does not
+simulate a worker recovering and gradually draining a backlog over time — this particular run
+never lets depth fall far enough for a later batch to fit — and 150ms is a stand-in chosen to
+make the guard fire deterministically on this machine, not a measurement of any real model's
+latency.

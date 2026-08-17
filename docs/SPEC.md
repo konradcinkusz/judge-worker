@@ -118,11 +118,14 @@ that fail loudly if the forbidden state shows up.
 ## 6. Cost accounting
 
 `src/observability/pricing.ts` hardcodes list pricing (USD per million tokens) for the models
-this repo actually uses, as of 2026-08-17, sourced from Anthropic's pricing page. This table
-is not re-verified automatically — it will drift the next time any of these models' pricing
-changes, and `estimateCostUsd` returns `null` for a model it doesn't recognize rather than
-guessing. Refresh it by hand against `https://platform.claude.com/docs/en/pricing` before
-citing a cost number from this repo as current.
+this repo actually uses, as of `PRICING_LAST_VERIFIED`, sourced from Anthropic's pricing page.
+The rates themselves are not re-verified automatically — nothing fetches or diffs against a
+live source — and `estimateCostUsd` returns `null` for a model it doesn't recognize rather
+than guessing. What is automatic: `test/pricing.test.ts` fails once
+`PRICING_LAST_VERIFIED` is more than `PRICING_STALENESS_LIMIT_MONTHS` (6) old, so a stale
+table becomes a loud CI failure instead of a silently-wrong cost number. When that test fails
+(or before citing a cost number from this repo as current regardless), refresh the table by
+hand against `https://platform.claude.com/docs/en/pricing` and bump `PRICING_LAST_VERIFIED`.
 
 ## 7. Layer split and CI gates
 
@@ -164,9 +167,97 @@ runs as part of `pnpm run test` and is not a separate slow job. See
   BullMQ job options, not hand-rolled.
 - **Dead-letter queue**: a job that exhausts its retries is moved to a separate
   `<queue-name>-dead-letter` queue with the failure reason attached, instead of being retried
-  forever or silently dropped. Proven in `test/queue.test.ts`.
+  forever or silently dropped. `pnpm run dlq -- list` / `dlq -- requeue <jobId>` / `dlq --
+requeue --all` (`src/cli/dlq.ts`, `reliability/deadLetter.ts`) inspect it and move an entry
+  back onto the main queue as a fresh job (through the normal `enqueueBatch` path, so it gets
+  the same job options and queue-depth guard a first-time job does) once whatever caused the
+  original failure is fixed; the entry is only removed once the requeue actually succeeds.
+  Proven in `test/queue.test.ts`.
 - **Concurrency** (`WORKER_CONCURRENCY`, default 5): a BullMQ `Worker` concurrency setting —
   the other half of backpressure alongside the queue-depth limit.
+- **Live-call retry tuning** (`ANTHROPIC_MAX_RETRIES`, default 2): the Anthropic SDK's own
+  retry budget for 429s/5xxs on a single `LiveJudgeProvider` call, distinct from BullMQ's
+  job-level `JOB_ATTEMPTS`. Proven in `test/liveJudgeProvider.test.ts` via an injected fetch
+  that returns a 429 then a valid response.
+- **Circuit breaker** (`CIRCUIT_BREAKER_FAILURE_THRESHOLD` / `CIRCUIT_BREAKER_RESET_MS`,
+  defaults 5 / 30000ms): `CircuitBreakerJudgeProvider` (`src/judge/circuitBreakerJudgeProvider.ts`)
+  wraps every live judge (`cli/buildProvider.ts`) so consecutive call failures trip a
+  closed -> open -> half-open breaker instead of every job independently burning through the
+  SDK's own retries against a downed or rate-limited endpoint. Proven in
+  `test/circuitBreakerJudgeProvider.test.ts`.
+- **Per-run cost ceiling** (`MAX_RUN_COST_USD`, unset by default): `RunCostTracker`
+  (`src/reliability/costCeiling.ts`) accumulates each graded trace's `costUsd`, and
+  `queue/worker.ts` pauses the BullMQ worker once the running total reaches the ceiling —
+  jobs already in flight still finish, so this is a soft cap, not a hard kill. Has no effect
+  against the mock judge (`costUsd` is always `null`; see `pricing.ts`). Proven in
+  `test/queue.test.ts` and `test/costCeiling.test.ts`.
+- **Shutdown grace period** (`SHUTDOWN_GRACE_PERIOD_MS`, default 30000ms): `cli/worker.ts`'s
+  SIGINT/SIGTERM handler races `worker.close()` (which BullMQ documents as waiting for active
+  jobs to finish) against this timeout instead of awaiting it unconditionally, so one hung job
+  (e.g. a live judge call that never resolves) can't block shutdown forever.
+  `queue/shutdown.ts`'s `trackActiveJobs` records what's active purely from the Worker's own
+  events (no extra Redis round-trip), and `shutdownWithTimeout` reports which job(s) were
+  still active when the grace period elapsed so the force-exit gets logged with exactly what
+  it interrupted, not just that it happened. Proven in `test/queue.test.ts` end to end, using
+  a provider whose `grade()` only resolves once the test explicitly releases it.
+
+## 8a. Logging and PII
+
+Trace content in this repo's own fixtures is synthetic, but a real deployment grades real
+conversation/tool-call data, and structured logs (`src/observability/logger.ts`, pino) are
+often shipped to a third-party aggregator outside this process's control. The policy:
+
+- **Safe to log at any level**: trace/batch/job IDs, scenario class, verdict, token counts,
+  cost, durations, queue depths and job counts, config values, and short enum-like fields
+  (e.g. a Messages API `stop_reason`).
+- **Never logged**: raw conversation turns, tool-call arguments or results, agent replies, the
+  rendered judge narrative/prompt (`renderTraceNarrative`), or the judge's own `rationale` and
+  per-rubric `justification` text. The last two are easy to miss — they're LLM-generated, but
+  generated _about_ the trace, so they can directly quote or closely paraphrase the underlying
+  conversation.
+- **Enforcement, not just prose**: `src/observability/redact.ts`'s `safeResultFields()` is a
+  whitelist over `JudgeResult`, used at every log call site that logs a graded result
+  (`cli/worker.ts`) instead of hand-picking fields — a field added to `JudgeResult` later does
+  not become loggable just because a call site spread the whole object in. This repo's own
+  thrown errors never interpolate trace content (only IDs and short enum-like fields), but an
+  upstream dependency's error text is not under this repo's control; `truncateForLog()` bounds
+  the dead-letter `reason` derived from it before it is persisted or logged downstream.
+- Proven in `test/redact.test.ts`.
+
+**Not OpenTelemetry.** `logger.ts`'s own doc comment says log field _vocabulary_ is "borrowed
+from OTel GenAI semantic conventions" (`model`, token counts, latency named and shaped the way
+that spec names and shapes them) -- stated here explicitly too, because it's easy to misread as
+a claim that this repo emits real OpenTelemetry spans/traces. It does not: there is no
+`@opentelemetry/sdk-node`, no span creation, no OTLP exporter, anywhere in this codebase.
+Structured pino logs and the Prometheus metrics in §8b below are the only telemetry surfaces.
+Real span-based tracing (one span per job, nested spans for the judge call, exported to a
+collector) is a legitimate next step for a production deployment, not something this repo
+needed to demonstrate the grading pipeline itself, and adding it without an actual collector to
+send it to would be instrumentation for its own sake.
+
+## 8b. Metrics
+
+`src/observability/prometheusMetrics.ts` is the live counterpart to `BatchMetrics`
+(`metrics.ts`): that class summarizes one bounded CLI run (a load test, a calibration pass) as
+a JSON object printed/written at the end; this registers the same underlying per-job data
+(`JudgeResult` fields) as Prometheus counters/histograms for `cli/worker.ts` -- a long-lived
+process -- to expose live instead of only reporting a summary once it stops.
+
+- `judge_worker_jobs_graded_total{verdict}`, `judge_worker_job_retries_total`,
+  `judge_worker_jobs_dead_lettered_total`: job outcome counters, fed by the same
+  `onSuccess`/`onRetryableFailure`/`onDeadLetter` hooks `startWorker` already exposes.
+- `judge_worker_job_duration_seconds` (histogram), `judge_worker_tokens_total{direction}`,
+  `judge_worker_cost_usd_total`: per-job cost/latency/token accounting, straight from
+  `JudgeResult` -- `costUsd` is null-checked before adding, so this never advances against the
+  mock judge (no pricing entry; see `pricing.ts`).
+- Default Node process metrics (CPU, memory, event-loop lag, GC) via `prom-client`'s
+  `collectDefaultMetrics()`, registered alongside the above.
+- `METRICS_PORT` (unset by default -- `cli/worker.ts` does not bind a port at all unless this
+  is set): `src/observability/metricsServer.ts` is a plain `node:http` server, not a framework,
+  serving `GET /metrics` in Prometheus exposition format; everything else 404s. Only wired into
+  `cli/worker.ts` (a long-lived process) -- the one-shot CLIs don't start it.
+- Proven in `test/prometheusMetrics.test.ts` and `test/metricsServer.test.ts` (a real HTTP
+  server on an OS-assigned port, real `fetch()` requests, not a mocked request/response pair).
 
 ## 9. Scale — what was and wasn't tested
 

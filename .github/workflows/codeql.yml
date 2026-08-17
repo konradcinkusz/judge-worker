@@ -1,0 +1,90 @@
+name: CodeQL
+
+# Static analysis for the javascript-typescript language.
+#
+# Visibility guard: GitHub code scanning needs GitHub Advanced Security on a private
+# repository, and this repo is private as of this writing (issue #19's visibility decision is
+# still open). A workflow that fails for a reason unrelated to the code trains everyone to
+# ignore red checks -- more than the analysis buys back -- so this job detects that case and
+# skips itself with an explanation instead of shipping a permanently-red required check. It
+# starts analyzing on the first push after the repository goes public, with no edit to this
+# file.
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+  schedule:
+    # Mondays 04:00 UTC -- rule sets change under a codebase that hasn't.
+    - cron: "0 4 * * 1"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: codeql-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  analyze:
+    name: Analyze JavaScript/TypeScript
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+
+    permissions:
+      contents: read
+      security-events: write
+      actions: read
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Is code scanning available here?
+        id: gate
+        run: |
+          set -euo pipefail
+          if [ "${{ github.event.repository.private }}" = "true" ]; then
+            echo "available=false" >> "$GITHUB_OUTPUT"
+            {
+              echo "## CodeQL: SKIPPED"
+              echo
+              echo "This repository is private, and code scanning requires GitHub Advanced"
+              echo "Security on a private repository. The workflow is committed and reviewed;"
+              echo "it starts analyzing on the first push after the repository becomes"
+              echo "public, with no change to this file."
+            } >> "$GITHUB_STEP_SUMMARY"
+            echo "::notice::CodeQL skipped — private repository without Advanced Security."
+          else
+            echo "available=true" >> "$GITHUB_OUTPUT"
+          fi
+
+      # No `version:` input -- pnpm/action-setup@v4 reads it from package.json's
+      # `packageManager` field. Setting both is a hard error (ERR_PNPM_BAD_PM_VERSION).
+      - uses: pnpm/action-setup@v4
+        if: steps.gate.outputs.available == 'true'
+
+      - uses: actions/setup-node@v4
+        if: steps.gate.outputs.available == 'true'
+        with:
+          node-version: 22
+          cache: pnpm
+
+      - name: Install dependencies
+        if: steps.gate.outputs.available == 'true'
+        # Not required for the JS/TS extractor itself (it analyzes source directly, no build
+        # step) -- installed type declarations just give it more to work with.
+        run: pnpm install --frozen-lockfile
+
+      - name: Initialize CodeQL
+        if: steps.gate.outputs.available == 'true'
+        uses: github/codeql-action/init@v3
+        with:
+          languages: javascript-typescript
+          queries: security-and-quality
+
+      - name: Perform CodeQL analysis
+        if: steps.gate.outputs.available == 'true'
+        uses: github/codeql-action/analyze@v3
+        with:
+          category: /language:javascript-typescript
