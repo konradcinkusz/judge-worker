@@ -35,7 +35,7 @@ with real numbers from real runs, not projections.
 
 ```bash
 pnpm install
-docker compose up -d          # Redis only
+docker compose up redis -d     # Redis only
 pnpm run ingest                # loads fixtures/traces/*.json, enqueues batches
 pnpm run worker                # grades every job with the mock judge, no API key needed
 ```
@@ -45,6 +45,15 @@ That's the whole default demo — zero external API keys. To grade for real inst
 ```bash
 export ANTHROPIC_API_KEY=sk-ant-...
 pnpm run worker -- --live
+```
+
+Fully containerized, no local Node/pnpm at all — `docker compose up` (no service name) also
+runs `ingest` and `worker` (`Dockerfile`, multi-stage: `pnpm run build`, then
+`dist/cli/worker.js` in a slim runtime image), doing the same ingest-then-grade demo end to
+end:
+
+```bash
+docker compose up --build
 ```
 
 Other entry points:
@@ -118,5 +127,5 @@ pnpm run build
 ```
 
 The queue integration test (`test/queue.test.ts`) needs a reachable Redis
-(`REDIS_URL`, default `redis://127.0.0.1:6379`) — `docker compose up -d` or a local
+(`REDIS_URL`, default `redis://127.0.0.1:6379`) — `docker compose up redis -d` or a local
 `redis-server` both work; CI runs it against a `redis:7-alpine` service container.
