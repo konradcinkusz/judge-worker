@@ -1,0 +1,16 @@
+blank_issues_enabled: true
+
+contact_links:
+  - name: How this repo grades traces
+    url: https://github.com/konradcinkusz/judge-worker/blob/main/docs/SPEC.md
+    about: >-
+      The spec is the contract. Before filing a bug, check whether the behavior you saw is
+      specified, unspecified, or explicitly out of scope — each is a different kind of issue.
+
+  - name: What this repo proves (and doesn't)
+    url: https://github.com/konradcinkusz/judge-worker/blob/main/FINDINGS.md
+    about: Real numbers from real runs, and the honest limits of what they show.
+
+  - name: Architecture standards this repo was built against
+    url: https://github.com/konradcinkusz/architecture-standards
+    about: Questions about the reference architecture itself belong in that repository, not here.
