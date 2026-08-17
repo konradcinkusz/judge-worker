@@ -1,0 +1,94 @@
+# GitHub Pages documentation site (Jekyll + Just the Docs), built and deployed by
+# .github/workflows/docs.yml -- not part of the TypeScript worker's own build.
+#
+# Pages under site/ carry Jekyll front matter and pull their body in via
+# {% include %} from symlinks in _includes/ that point at the real
+# source-of-truth files (README.md, FINDINGS.md, MUTATIONS.md, docs/SPEC.md,
+# docs/CALIBRATION.md, docs/architecture/DECISIONS.md). Nothing is duplicated,
+# and those source files stay free of front matter so they keep rendering
+# cleanly as plain markdown when read directly on GitHub. Symlinks, not
+# `include_relative` with a `../` path, because Jekyll's include-tag filename
+# validator hard-rejects ".." in the argument -- there is no config flag to
+# relax it.
+
+title: judge-worker
+description: >-
+  An async worker that pulls batches of already-ingested agent trace data off a
+  Redis/BullMQ queue and runs LLM-as-a-judge grading on them in the background --
+  with the judge itself proven reliable via mutation testing and calibrated
+  against human labels.
+theme: just-the-docs
+
+url: "https://konradcinkusz.github.io"
+baseurl: "/judge-worker" # overridden at build time by --baseurl in CI; kept here for local `jekyll serve`
+
+plugins:
+  - jekyll-seo-tag
+  - jekyll-sitemap
+
+# Only site/*.md are built as standalone pages. Everything else in the repo is
+# source code or the plain-markdown docs those pages pull their content from
+# via _includes/ symlinks, not Pages content in its own right. Note: an
+# exclude entry is matched as a path prefix, not just an exact path -- e.g.
+# excluding "docs" would also exclude a directory named "docs-site". Keep
+# these names free of that kind of collision with the "site" directory above.
+exclude:
+  - src
+  - test
+  - fixtures
+  - data
+  - node_modules
+  - dist
+  - reports
+  - coverage
+  - .github
+  - Gemfile
+  - Gemfile.lock
+  - README.md
+  - FINDINGS.md
+  - MUTATIONS.md
+  - docs
+  - package.json
+  - pnpm-lock.yaml
+  - tsconfig.json
+  - tsconfig.build.json
+  - vitest.config.ts
+  - eslint.config.js
+  - docker-compose.yml
+  - .env.example
+  - LICENSE
+  - .prettierrc.json
+  - .prettierignore
+  - .gitignore
+  - .nojekyll
+
+# Jekyll applies no layout to a page unless one is set; Just the Docs needs
+# `layout: default` (its own layout, providing the nav/sidebar/search chrome)
+# on every page. Set centrally here instead of repeating it in each page's
+# front matter.
+defaults:
+  - scope:
+      path: "site"
+    values:
+      layout: default
+
+search_enabled: true
+nav_sort: case_insensitive
+heading_anchors: true
+back_to_top: true
+back_to_top_text: "Back to top"
+
+aux_links:
+  "judge-worker on GitHub":
+    - "https://github.com/konradcinkusz/judge-worker"
+aux_links_new_tab: true
+
+footer_content: "Copyright &copy; 2026. Distributed under the MIT license."
+
+callouts:
+  note:
+    title: Note
+    color: blue
+  caveat:
+    title: Caveat
+    color: yellow
