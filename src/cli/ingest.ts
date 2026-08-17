@@ -4,7 +4,7 @@ import { enqueueBatch, closeQueue } from "../queue/producer.js";
 import { closeRedisConnection } from "../queue/connection.js";
 import { logger } from "../observability/logger.js";
 
-function parseArgs(argv: string[]): { dir: string; batchSize: number } {
+export function parseArgs(argv: string[]): { dir: string; batchSize: number } {
   const dirFlagIndex = argv.indexOf("--dir");
   const batchFlagIndex = argv.indexOf("--batch-size");
   return {
@@ -27,7 +27,11 @@ async function main(): Promise<void> {
   logger.info("ingestion complete");
 }
 
-main().catch((err: unknown) => {
-  logger.error({ err }, "ingestion failed");
-  process.exitCode = 1;
-});
+// Only run when this file is the process entry point, not when imported for `parseArgs`
+// (see test/cli.test.ts) -- otherwise importing it for testing would enqueue real jobs.
+if (import.meta.url === `file://${process.argv[1]}`) {
+  main().catch((err: unknown) => {
+    logger.error({ err }, "ingestion failed");
+    process.exitCode = 1;
+  });
+}

@@ -5,17 +5,16 @@ import { LiveJudgeProvider } from "../judge/liveJudgeProvider.js";
 import { loadEnv } from "../config/env.js";
 import { logger } from "../observability/logger.js";
 import { closeRedisConnection } from "../queue/connection.js";
+import { requireApiKeyForLive } from "./liveGuard.js";
 
-function isLive(argv: string[]): boolean {
+export function isLive(argv: string[]): boolean {
   return argv.includes("--live");
 }
 
 function main(): void {
   const env = loadEnv();
   const live = isLive(process.argv.slice(2));
-  if (live && !env.ANTHROPIC_API_KEY) {
-    throw new Error("--live requires ANTHROPIC_API_KEY to be set");
-  }
+  requireApiKeyForLive(live, env.ANTHROPIC_API_KEY);
   const provider = live
     ? new LiveJudgeProvider(
         env.JUDGE_MODEL,
@@ -56,9 +55,14 @@ function main(): void {
   process.on("SIGTERM", () => void shutdown());
 }
 
-try {
-  main();
-} catch (err) {
-  logger.error({ err }, "worker failed to start");
-  process.exitCode = 1;
+// Only run when this file is the process entry point (`tsx src/cli/worker.ts`), not when
+// it's imported for its exports (e.g. `isLive` from test/cli.test.ts) -- otherwise importing
+// this module for testing would connect to Redis and register signal handlers as a side effect.
+if (import.meta.url === `file://${process.argv[1]}`) {
+  try {
+    main();
+  } catch (err) {
+    logger.error({ err }, "worker failed to start");
+    process.exitCode = 1;
+  }
 }

@@ -11,6 +11,7 @@ import { BatchMetrics } from "../observability/metrics.js";
 import { loadEnv } from "../config/env.js";
 import { logger } from "../observability/logger.js";
 import { closeRedisConnection } from "../queue/connection.js";
+import { requireApiKeyForLive } from "./liveGuard.js";
 
 /**
  * Local load test against a synthetic fixture set (hundreds-to-low-thousands of traces).
@@ -19,7 +20,7 @@ import { closeRedisConnection } from "../queue/connection.js";
  * FINDINGS.md for that caveat stated next to the actual numbers this run produces.
  */
 
-function parseArgs(argv: string[]): { count: number; live: boolean; batchSize: number } {
+export function parseArgs(argv: string[]): { count: number; live: boolean; batchSize: number } {
   const countIdx = argv.indexOf("--count");
   const batchIdx = argv.indexOf("--batch-size");
   return {
@@ -48,9 +49,7 @@ async function waitForDrain(timeoutMs: number): Promise<void> {
 async function main(): Promise<void> {
   const env = loadEnv();
   const { count, live, batchSize } = parseArgs(process.argv.slice(2));
-  if (live && !env.ANTHROPIC_API_KEY) {
-    throw new Error("--live requires ANTHROPIC_API_KEY to be set");
-  }
+  requireApiKeyForLive(live, env.ANTHROPIC_API_KEY);
   const provider = live
     ? new LiveJudgeProvider(
         env.JUDGE_MODEL,
@@ -104,7 +103,11 @@ async function main(): Promise<void> {
   await closeRedisConnection();
 }
 
-main().catch((err: unknown) => {
-  logger.error({ err }, "load test failed");
-  process.exitCode = 1;
-});
+// Only run when this file is the process entry point, not when imported for `parseArgs`
+// (see test/cli.test.ts) -- otherwise importing it for testing would run a real load test.
+if (import.meta.url === `file://${process.argv[1]}`) {
+  main().catch((err: unknown) => {
+    logger.error({ err }, "load test failed");
+    process.exitCode = 1;
+  });
+}
