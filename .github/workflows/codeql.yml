@@ -59,9 +59,9 @@ jobs:
             echo "available=true" >> "$GITHUB_OUTPUT"
           fi
 
-      # No `version:` input -- pnpm/action-setup@v4 reads it from package.json's
+      # No `version:` input -- pnpm/action-setup@v6 reads it from package.json's
       # `packageManager` field. Setting both is a hard error (ERR_PNPM_BAD_PM_VERSION).
-      - uses: pnpm/action-setup@v4
+      - uses: pnpm/action-setup@v6
         if: steps.gate.outputs.available == 'true'
 
       - uses: actions/setup-node@v4
