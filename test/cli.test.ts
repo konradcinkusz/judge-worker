@@ -48,8 +48,14 @@ describe("cli/calibrate.ts parseArgs", () => {
 });
 
 describe("cli/loadtest.ts parseArgs", () => {
-  it("defaults to 500 synthetic traces, batch size 50, mock (not live)", () => {
-    expect(parseLoadtestArgs([])).toEqual({ count: 500, live: false, batchSize: 50 });
+  it("defaults to 500 synthetic traces, batch size 50, mock (not live), no latency/depth override", () => {
+    expect(parseLoadtestArgs([])).toEqual({
+      count: 500,
+      live: false,
+      batchSize: 50,
+      simulateLatencyMs: 0,
+      queueDepthLimit: undefined,
+    });
   });
 
   it("honors --count, --batch-size, and --live overrides", () => {
@@ -57,6 +63,20 @@ describe("cli/loadtest.ts parseArgs", () => {
       count: 1200,
       live: true,
       batchSize: 40,
+      simulateLatencyMs: 0,
+      queueDepthLimit: undefined,
+    });
+  });
+
+  it("honors --simulate-latency-ms and --queue-depth-limit overrides", () => {
+    expect(
+      parseLoadtestArgs(["--simulate-latency-ms", "50", "--queue-depth-limit", "100"]),
+    ).toEqual({
+      count: 500,
+      live: false,
+      batchSize: 50,
+      simulateLatencyMs: 50,
+      queueDepthLimit: 100,
     });
   });
 });

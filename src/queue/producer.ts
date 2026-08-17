@@ -17,22 +17,40 @@ export function judgeQueue(): Queue<JudgeJobData> {
   return sharedQueue;
 }
 
+export interface EnqueueBatchOptions {
+  /**
+   * Dedicated queue for the caller's own connection (e.g. the load test CLI proving out this
+   * guard against a real backlog, see cli/loadtest.ts) instead of duplicating the depth-check
+   * logic. Defaults to the shared singleton.
+   */
+  queue?: Queue<JudgeJobData>;
+  /**
+   * Explicit override, bypassing loadEnv()'s memoized QUEUE_DEPTH_LIMIT. Needed because
+   * loadEnv() is cached on first call, and by the time a CLI's main() runs, other modules
+   * evaluated at import time (e.g. observability/logger.ts reads LOG_LEVEL via loadEnv() at
+   * module scope) have typically already forced that memoization with whatever was in
+   * process.env before the CLI had a chance to parse its own flags -- setting
+   * process.env.QUEUE_DEPTH_LIMIT from inside main() is too late to change what loadEnv()
+   * already cached.
+   */
+  queueDepthLimit?: number;
+}
+
 /**
  * Enqueues one job per trace. Backpressure: refuses to push a batch that would put the queue
- * over QUEUE_DEPTH_LIMIT rather than silently piling up unbounded work — the caller decides
+ * over the depth limit rather than silently piling up unbounded work — the caller decides
  * whether to wait and retry or shed the batch.
  */
-export async function enqueueBatch(batch: TraceBatch): Promise<void> {
-  const queue = judgeQueue();
+export async function enqueueBatch(
+  batch: TraceBatch,
+  options: EnqueueBatchOptions = {},
+): Promise<void> {
   const env = loadEnv();
+  const queue = options.queue ?? judgeQueue();
+  const queueDepthLimit = options.queueDepthLimit ?? env.QUEUE_DEPTH_LIMIT;
   const depth = await queue.count();
-  if (depth + batch.traces.length > env.QUEUE_DEPTH_LIMIT) {
-    throw new QueueDepthExceededError(
-      batch.batchId,
-      depth,
-      batch.traces.length,
-      env.QUEUE_DEPTH_LIMIT,
-    );
+  if (depth + batch.traces.length > queueDepthLimit) {
+    throw new QueueDepthExceededError(batch.batchId, depth, batch.traces.length, queueDepthLimit);
   }
 
   await queue.addBulk(
