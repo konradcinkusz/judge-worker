@@ -221,6 +221,17 @@ often shipped to a third-party aggregator outside this process's control. The po
   the dead-letter `reason` derived from it before it is persisted or logged downstream.
 - Proven in `test/redact.test.ts`.
 
+**Not OpenTelemetry.** `logger.ts`'s own doc comment says log field _vocabulary_ is "borrowed
+from OTel GenAI semantic conventions" (`model`, token counts, latency named and shaped the way
+that spec names and shapes them) -- stated here explicitly too, because it's easy to misread as
+a claim that this repo emits real OpenTelemetry spans/traces. It does not: there is no
+`@opentelemetry/sdk-node`, no span creation, no OTLP exporter, anywhere in this codebase.
+Structured pino logs are the only telemetry surface. Real span-based tracing (one span per job,
+nested spans for the judge call, exported to a collector) is a legitimate next step for a
+production deployment, not something this repo needed to demonstrate the grading pipeline
+itself, and adding it without an actual collector to send it to would be instrumentation for
+its own sake.
+
 ## 9. Scale — what was and wasn't tested
 
 `pnpm run loadtest` runs the pipeline against hundreds to low thousands of synthetic traces
