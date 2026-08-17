@@ -118,11 +118,14 @@ that fail loudly if the forbidden state shows up.
 ## 6. Cost accounting
 
 `src/observability/pricing.ts` hardcodes list pricing (USD per million tokens) for the models
-this repo actually uses, as of 2026-08-17, sourced from Anthropic's pricing page. This table
-is not re-verified automatically — it will drift the next time any of these models' pricing
-changes, and `estimateCostUsd` returns `null` for a model it doesn't recognize rather than
-guessing. Refresh it by hand against `https://platform.claude.com/docs/en/pricing` before
-citing a cost number from this repo as current.
+this repo actually uses, as of `PRICING_LAST_VERIFIED`, sourced from Anthropic's pricing page.
+The rates themselves are not re-verified automatically — nothing fetches or diffs against a
+live source — and `estimateCostUsd` returns `null` for a model it doesn't recognize rather
+than guessing. What is automatic: `test/pricing.test.ts` fails once
+`PRICING_LAST_VERIFIED` is more than `PRICING_STALENESS_LIMIT_MONTHS` (6) old, so a stale
+table becomes a loud CI failure instead of a silently-wrong cost number. When that test fails
+(or before citing a cost number from this repo as current regardless), refresh the table by
+hand against `https://platform.claude.com/docs/en/pricing` and bump `PRICING_LAST_VERIFIED`.
 
 ## 7. Layer split and CI gates
 
