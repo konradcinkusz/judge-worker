@@ -4,6 +4,7 @@ import { parseArgs as parseIngestArgs } from "../src/cli/ingest.js";
 import { isLive } from "../src/cli/worker.js";
 import { parseArgs as parseCalibrateArgs } from "../src/cli/calibrate.js";
 import { parseArgs as parseLoadtestArgs } from "../src/cli/loadtest.js";
+import { parseArgs as parseDlqArgs } from "../src/cli/dlq.js";
 import { requireApiKeyForLive } from "../src/cli/liveGuard.js";
 import { buildProvider } from "../src/cli/buildProvider.js";
 import { MockJudgeProvider } from "../src/judge/mockJudgeProvider.js";
@@ -82,6 +83,33 @@ describe("cli/loadtest.ts parseArgs", () => {
       simulateLatencyMs: 50,
       queueDepthLimit: 100,
     });
+  });
+});
+
+describe("cli/dlq.ts parseArgs", () => {
+  it("list defaults to limit 50", () => {
+    expect(parseDlqArgs(["list"])).toEqual({ kind: "list", limit: 50 });
+  });
+
+  it("list honors --limit", () => {
+    expect(parseDlqArgs(["list", "--limit", "10"])).toEqual({ kind: "list", limit: 10 });
+  });
+
+  it("requeue <jobId> targets a single job", () => {
+    expect(parseDlqArgs(["requeue", "123"])).toEqual({ kind: "requeue", jobId: "123" });
+  });
+
+  it("requeue --all targets every dead-letter entry", () => {
+    expect(parseDlqArgs(["requeue", "--all"])).toEqual({ kind: "requeue-all" });
+  });
+
+  it("throws when requeue is given neither a job id nor --all", () => {
+    expect(() => parseDlqArgs(["requeue"])).toThrow(/requires a job id/);
+  });
+
+  it("throws on an unknown subcommand", () => {
+    expect(() => parseDlqArgs(["bogus"])).toThrow(/unknown dlq subcommand/);
+    expect(() => parseDlqArgs([])).toThrow(/unknown dlq subcommand/);
   });
 });
 

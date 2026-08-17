@@ -22,7 +22,13 @@ const { enqueueBatch, closeQueue, QueueDepthExceededError } =
 const { startWorker } = await import("../src/queue/worker.js");
 const { closeRedisConnection } = await import("../src/queue/connection.js");
 const { MockJudgeProvider } = await import("../src/judge/mockJudgeProvider.js");
-const { deadLetterDepth, listDeadLetterEntries } = await import("../src/reliability/deadLetter.js");
+const {
+  deadLetterDepth,
+  listDeadLetterEntries,
+  requeueDeadLetterJob,
+  requeueAllDeadLetterJobs,
+  DeadLetterJobNotFoundError,
+} = await import("../src/reliability/deadLetter.js");
 
 function trace(id: string): Trace {
   return {
@@ -139,6 +145,84 @@ describe("queue: producer -> worker end to end", () => {
     expect(entry).toBeDefined();
     expect(entry?.reason.length).toBeLessThan(longMessage.length);
     expect(entry?.reason).toContain("truncated");
+  });
+
+  it("requeues a dead-lettered job onto the main queue, and it succeeds against a healthy provider", async () => {
+    await worker.close();
+    const failingProvider: JudgeProvider = {
+      name: "always-fails-requeue-test",
+      model: "test",
+      grade: () => Promise.reject(new Error("will be requeued")),
+    };
+    worker = startWorker(failingProvider, {
+      onDeadLetter: (_batchId, traceId) => dead.push(traceId),
+    });
+    await enqueueBatch({ batchId: `requeue-src-${suffix}`, traces: [trace("will-requeue")] });
+    await waitUntil(() => dead.includes("will-requeue"), 10_000);
+
+    const beforeEntries = await listDeadLetterEntries(100);
+    const entry = beforeEntries.find((e) => e.traceId === "will-requeue");
+    expect(entry).toBeDefined();
+
+    // Swap to a healthy worker before requeuing, so the requeued job actually succeeds --
+    // matches the real operator workflow of "fix the root cause, then requeue".
+    await worker.close();
+    worker = startWorker(new MockJudgeProvider(), {
+      onSuccess: (result) => succeeded.push(result),
+      onDeadLetter: (_batchId, traceId) => dead.push(traceId),
+    });
+
+    const requeued = await requeueDeadLetterJob(entry!.jobId);
+    expect(requeued.traceId).toBe("will-requeue");
+    expect(requeued.reason).toBe("will be requeued"); // original reason returned, not carried onto the new job
+
+    await waitUntil(() => succeeded.some((r) => r.traceId === "will-requeue"), 10_000);
+
+    const afterEntries = await listDeadLetterEntries(100);
+    expect(afterEntries.find((e) => e.jobId === entry!.jobId)).toBeUndefined();
+  });
+
+  it("requeueDeadLetterJob throws DeadLetterJobNotFoundError for an unknown job id", async () => {
+    await expect(requeueDeadLetterJob(`does-not-exist-${suffix}`)).rejects.toThrow(
+      DeadLetterJobNotFoundError,
+    );
+  });
+
+  it("requeueAllDeadLetterJobs requeues every current entry", async () => {
+    const existingBefore = await deadLetterDepth();
+
+    await worker.close();
+    const failingProvider: JudgeProvider = {
+      name: "always-fails-bulk-requeue-test",
+      model: "test",
+      grade: () => Promise.reject(new Error("bulk requeue source")),
+    };
+    worker = startWorker(failingProvider, {
+      onDeadLetter: (_batchId, traceId) => dead.push(traceId),
+    });
+    await enqueueBatch({
+      batchId: `bulk-requeue-src-${suffix}`,
+      traces: [trace("bulk-1"), trace("bulk-2")],
+    });
+    await waitUntil(() => dead.includes("bulk-1") && dead.includes("bulk-2"), 10_000);
+    expect(await deadLetterDepth()).toBe(existingBefore + 2);
+
+    await worker.close();
+    worker = startWorker(new MockJudgeProvider(), {
+      onSuccess: (result) => succeeded.push(result),
+      onDeadLetter: (_batchId, traceId) => dead.push(traceId),
+    });
+
+    const count = await requeueAllDeadLetterJobs();
+    expect(count).toBe(existingBefore + 2);
+
+    await waitUntil(
+      () =>
+        succeeded.some((r) => r.traceId === "bulk-1") &&
+        succeeded.some((r) => r.traceId === "bulk-2"),
+      10_000,
+    );
+    expect(await deadLetterDepth()).toBe(0);
   });
 
   it("pauses the worker once MAX_RUN_COST_USD is exceeded, and resuming lets it continue", async () => {

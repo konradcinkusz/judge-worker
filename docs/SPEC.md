@@ -164,7 +164,12 @@ runs as part of `pnpm run test` and is not a separate slow job. See
   BullMQ job options, not hand-rolled.
 - **Dead-letter queue**: a job that exhausts its retries is moved to a separate
   `<queue-name>-dead-letter` queue with the failure reason attached, instead of being retried
-  forever or silently dropped. Proven in `test/queue.test.ts`.
+  forever or silently dropped. `pnpm run dlq -- list` / `dlq -- requeue <jobId>` / `dlq --
+requeue --all` (`src/cli/dlq.ts`, `reliability/deadLetter.ts`) inspect it and move an entry
+  back onto the main queue as a fresh job (through the normal `enqueueBatch` path, so it gets
+  the same job options and queue-depth guard a first-time job does) once whatever caused the
+  original failure is fixed; the entry is only removed once the requeue actually succeeds.
+  Proven in `test/queue.test.ts`.
 - **Concurrency** (`WORKER_CONCURRENCY`, default 5): a BullMQ `Worker` concurrency setting —
   the other half of backpressure alongside the queue-depth limit.
 - **Live-call retry tuning** (`ANTHROPIC_MAX_RETRIES`, default 2): the Anthropic SDK's own

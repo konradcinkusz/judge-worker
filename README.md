@@ -53,6 +53,8 @@ Other entry points:
 pnpm run calibrate                    # Cohen's kappa vs. data/calibration/human-labels.jsonl
 pnpm run calibrate -- --live          # same, but grades with the real LLM judge
 pnpm run loadtest -- --count 1000     # synthetic-trace load test, prints a real summary
+pnpm run dlq -- list                  # inspect the dead-letter queue
+pnpm run dlq -- requeue <jobId>       # move one dead-lettered job back onto the main queue
 pnpm run test                         # full suite, incl. the mutation-testing harness
 ```
 

@@ -21,7 +21,8 @@
     "ingest": "tsx src/cli/ingest.ts",
     "worker": "tsx src/cli/worker.ts",
     "calibrate": "tsx src/cli/calibrate.ts",
-    "loadtest": "tsx src/cli/loadtest.ts"
+    "loadtest": "tsx src/cli/loadtest.ts",
+    "dlq": "tsx src/cli/dlq.ts"
   },
   "dependencies": {
     "@anthropic-ai/sdk": "^0.117.1",
