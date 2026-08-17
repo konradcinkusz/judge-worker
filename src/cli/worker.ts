@@ -1,11 +1,10 @@
 #!/usr/bin/env node
 import { startWorker } from "../queue/worker.js";
-import { MockJudgeProvider } from "../judge/mockJudgeProvider.js";
-import { LiveJudgeProvider } from "../judge/liveJudgeProvider.js";
 import { loadEnv } from "../config/env.js";
 import { logger } from "../observability/logger.js";
 import { closeRedisConnection } from "../queue/connection.js";
 import { requireApiKeyForLive } from "./liveGuard.js";
+import { buildProvider } from "./buildProvider.js";
 
 export function isLive(argv: string[]): boolean {
   return argv.includes("--live");
@@ -15,12 +14,7 @@ function main(): void {
   const env = loadEnv();
   const live = isLive(process.argv.slice(2));
   requireApiKeyForLive(live, env.ANTHROPIC_API_KEY);
-  const provider = live
-    ? new LiveJudgeProvider(
-        env.JUDGE_MODEL,
-        env.ANTHROPIC_API_KEY ? { apiKey: env.ANTHROPIC_API_KEY } : {},
-      )
-    : new MockJudgeProvider();
+  const provider = buildProvider(live, env);
 
   logger.info(
     { provider: provider.name, model: provider.model, concurrency: env.WORKER_CONCURRENCY },

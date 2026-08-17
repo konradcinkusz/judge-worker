@@ -13,8 +13,6 @@ import {
 } from "../queue/producer.js";
 import { judgeQueueName } from "../queue/queueNames.js";
 import { startWorker } from "../queue/worker.js";
-import { MockJudgeProvider } from "../judge/mockJudgeProvider.js";
-import { LiveJudgeProvider } from "../judge/liveJudgeProvider.js";
 import { LatencyInjectingJudgeProvider } from "../judge/latencyInjectingJudgeProvider.js";
 import type { JudgeProvider } from "../judge/judgeProvider.js";
 import { deadLetterDepth } from "../reliability/deadLetter.js";
@@ -23,6 +21,7 @@ import { loadEnv } from "../config/env.js";
 import { logger } from "../observability/logger.js";
 import { closeRedisConnection } from "../queue/connection.js";
 import { requireApiKeyForLive } from "./liveGuard.js";
+import { buildProvider } from "./buildProvider.js";
 
 /**
  * Local load test against a synthetic fixture set (hundreds-to-low-thousands of traces).
@@ -88,12 +87,7 @@ async function main(): Promise<void> {
   const env = loadEnv();
   const effectiveQueueDepthLimit = queueDepthLimit ?? env.QUEUE_DEPTH_LIMIT;
   requireApiKeyForLive(live, env.ANTHROPIC_API_KEY);
-  const baseProvider: JudgeProvider = live
-    ? new LiveJudgeProvider(
-        env.JUDGE_MODEL,
-        env.ANTHROPIC_API_KEY ? { apiKey: env.ANTHROPIC_API_KEY } : {},
-      )
-    : new MockJudgeProvider();
+  const baseProvider: JudgeProvider = buildProvider(live, env);
   const provider =
     simulateLatencyMs > 0
       ? new LatencyInjectingJudgeProvider(baseProvider, simulateLatencyMs)

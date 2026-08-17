@@ -2,12 +2,11 @@
 import { mkdir, writeFile } from "node:fs/promises";
 import { loadTracesFromDir } from "../ingestion/batchLoader.js";
 import { gradeTrace } from "../judge/gradeTrace.js";
-import { MockJudgeProvider } from "../judge/mockJudgeProvider.js";
-import { LiveJudgeProvider } from "../judge/liveJudgeProvider.js";
 import { loadHumanLabels, buildCalibrationReport } from "../calibration/calibrate.js";
 import { loadEnv } from "../config/env.js";
 import { logger } from "../observability/logger.js";
 import { requireApiKeyForLive } from "./liveGuard.js";
+import { buildProvider } from "./buildProvider.js";
 
 export function parseArgs(argv: string[]): { dir: string; labelsPath: string; live: boolean } {
   const dirIdx = argv.indexOf("--dir");
@@ -23,12 +22,7 @@ async function main(): Promise<void> {
   const env = loadEnv();
   const { dir, labelsPath, live } = parseArgs(process.argv.slice(2));
   requireApiKeyForLive(live, env.ANTHROPIC_API_KEY);
-  const provider = live
-    ? new LiveJudgeProvider(
-        env.JUDGE_MODEL,
-        env.ANTHROPIC_API_KEY ? { apiKey: env.ANTHROPIC_API_KEY } : {},
-      )
-    : new MockJudgeProvider();
+  const provider = buildProvider(live, env);
 
   const [traces, labels] = await Promise.all([loadTracesFromDir(dir), loadHumanLabels(labelsPath)]);
   logger.info(

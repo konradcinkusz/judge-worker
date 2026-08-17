@@ -136,6 +136,61 @@ describe("LiveJudgeProvider", () => {
     await expect(provider.grade(TRACE)).rejects.toThrow();
   });
 
+  it("retries a 429 up to maxRetries and eventually succeeds", async () => {
+    let callCount = 0;
+    const fakeFetch: typeof fetch = () => {
+      callCount += 1;
+      if (callCount === 1) {
+        return Promise.resolve(
+          new Response(
+            JSON.stringify({
+              type: "error",
+              error: { type: "rate_limit_error", message: "slow down" },
+            }),
+            { status: 429, headers: { "content-type": "application/json", "retry-after": "0" } },
+          ),
+        );
+      }
+      return Promise.resolve(
+        messagesResponse({ content: [{ type: "text", text: JSON.stringify(VALID_OUTPUT) }] }),
+      );
+    };
+
+    const provider = new LiveJudgeProvider("claude-haiku-4-5", {
+      apiKey: "test-key",
+      fetch: fakeFetch,
+      maxRetries: 1,
+    });
+    const result = await provider.grade(TRACE);
+
+    expect(result.output).toEqual(VALID_OUTPUT);
+    expect(callCount).toBe(2); // one 429 + one retry that succeeds
+  });
+
+  it("does not retry when maxRetries is 0 -- a 429 surfaces immediately", async () => {
+    let callCount = 0;
+    const fakeFetch: typeof fetch = () => {
+      callCount += 1;
+      return Promise.resolve(
+        new Response(
+          JSON.stringify({
+            type: "error",
+            error: { type: "rate_limit_error", message: "slow down" },
+          }),
+          { status: 429, headers: { "content-type": "application/json", "retry-after": "0" } },
+        ),
+      );
+    };
+
+    const provider = new LiveJudgeProvider("claude-haiku-4-5", {
+      apiKey: "test-key",
+      fetch: fakeFetch,
+      maxRetries: 0,
+    });
+    await expect(provider.grade(TRACE)).rejects.toThrow();
+    expect(callCount).toBe(1);
+  });
+
   it("never calls the network when a fetch is injected (sanity: no real HTTP)", async () => {
     const fakeFetch = vi.fn<typeof fetch>(() =>
       Promise.resolve(

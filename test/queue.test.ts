@@ -1,6 +1,6 @@
 import { describe, expect, it, afterAll } from "vitest";
 import type { Trace } from "../src/types/trace.js";
-import type { JudgeResult } from "../src/types/judge.js";
+import type { JudgeResult, JudgeOutput } from "../src/types/judge.js";
 import type { JudgeProvider } from "../src/judge/judgeProvider.js";
 
 // Each test file gets an isolated module registry under Vitest's default `isolate: true`, so
@@ -14,6 +14,7 @@ process.env["WORKER_CONCURRENCY"] = "3";
 process.env["JOB_ATTEMPTS"] = "2";
 process.env["JOB_BACKOFF_MS"] = "20";
 process.env["QUEUE_DEPTH_LIMIT"] = "10";
+process.env["MAX_RUN_COST_USD"] = "2";
 process.env["LOG_LEVEL"] = "error";
 
 const { enqueueBatch, closeQueue, QueueDepthExceededError } =
@@ -110,5 +111,41 @@ describe("queue: producer -> worker end to end", () => {
     await enqueueBatch({ batchId: `fail-${suffix}`, traces: [trace("will-fail")] });
     await waitUntil(() => dead.includes("will-fail"), 10_000);
     expect(await deadLetterDepth()).toBeGreaterThanOrEqual(1);
+  });
+
+  it("pauses the worker once MAX_RUN_COST_USD is exceeded, and resuming lets it continue", async () => {
+    await worker.close();
+    const output: JudgeOutput = {
+      verdict: "pass",
+      scores: [{ rubric: "grounding", score: 3, justification: "ok" }],
+      confidence: "high",
+      rationale: "ok",
+    };
+    const pricedProvider: JudgeProvider = {
+      name: "priced-fake",
+      model: "claude-haiku-4-5", // priced at $1.00/million input tokens (observability/pricing.ts)
+      grade: () => Promise.resolve({ output, inputTokens: 1_000_000, outputTokens: 0 }), // costUsd = $1.00 exactly
+    };
+    const priced: JudgeResult[] = [];
+    worker = startWorker(pricedProvider, { onSuccess: (result) => priced.push(result) });
+
+    // WORKER_CONCURRENCY is 3 for this file; enqueueing exactly 3 means all three are already
+    // in flight by the time the second one's completion crosses MAX_RUN_COST_USD=2 -- no race
+    // against a 4th job that may or may not start before the pause takes effect.
+    await enqueueBatch({
+      batchId: `cost-${suffix}`,
+      traces: Array.from({ length: 3 }, (_, i) => trace(`cost-${i}`)),
+    });
+    await waitUntil(() => worker.isPaused(), 10_000);
+    expect(priced.length).toBe(3); // all 3 already-in-flight jobs still finish -- a soft cap
+
+    // A trace enqueued after the pause must not be picked up while paused.
+    await enqueueBatch({ batchId: `cost-after-${suffix}`, traces: [trace("cost-after")] });
+    await new Promise((resolve) => setTimeout(resolve, 500));
+    expect(priced.length).toBe(3);
+
+    worker.resume();
+    await waitUntil(() => priced.length === 4, 10_000);
+    expect(priced.map((r) => r.traceId)).toContain("cost-after");
   });
 });

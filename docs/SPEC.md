@@ -167,6 +167,22 @@ runs as part of `pnpm run test` and is not a separate slow job. See
   forever or silently dropped. Proven in `test/queue.test.ts`.
 - **Concurrency** (`WORKER_CONCURRENCY`, default 5): a BullMQ `Worker` concurrency setting —
   the other half of backpressure alongside the queue-depth limit.
+- **Live-call retry tuning** (`ANTHROPIC_MAX_RETRIES`, default 2): the Anthropic SDK's own
+  retry budget for 429s/5xxs on a single `LiveJudgeProvider` call, distinct from BullMQ's
+  job-level `JOB_ATTEMPTS`. Proven in `test/liveJudgeProvider.test.ts` via an injected fetch
+  that returns a 429 then a valid response.
+- **Circuit breaker** (`CIRCUIT_BREAKER_FAILURE_THRESHOLD` / `CIRCUIT_BREAKER_RESET_MS`,
+  defaults 5 / 30000ms): `CircuitBreakerJudgeProvider` (`src/judge/circuitBreakerJudgeProvider.ts`)
+  wraps every live judge (`cli/buildProvider.ts`) so consecutive call failures trip a
+  closed -> open -> half-open breaker instead of every job independently burning through the
+  SDK's own retries against a downed or rate-limited endpoint. Proven in
+  `test/circuitBreakerJudgeProvider.test.ts`.
+- **Per-run cost ceiling** (`MAX_RUN_COST_USD`, unset by default): `RunCostTracker`
+  (`src/reliability/costCeiling.ts`) accumulates each graded trace's `costUsd`, and
+  `queue/worker.ts` pauses the BullMQ worker once the running total reaches the ceiling —
+  jobs already in flight still finish, so this is a soft cap, not a hard kill. Has no effect
+  against the mock judge (`costUsd` is always `null`; see `pricing.ts`). Proven in
+  `test/queue.test.ts` and `test/costCeiling.test.ts`.
 
 ## 9. Scale — what was and wasn't tested
 

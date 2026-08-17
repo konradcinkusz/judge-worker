@@ -1,9 +1,13 @@
 import { describe, expect, it } from "vitest";
+import type { Env } from "../src/config/env.js";
 import { parseArgs as parseIngestArgs } from "../src/cli/ingest.js";
 import { isLive } from "../src/cli/worker.js";
 import { parseArgs as parseCalibrateArgs } from "../src/cli/calibrate.js";
 import { parseArgs as parseLoadtestArgs } from "../src/cli/loadtest.js";
 import { requireApiKeyForLive } from "../src/cli/liveGuard.js";
+import { buildProvider } from "../src/cli/buildProvider.js";
+import { MockJudgeProvider } from "../src/judge/mockJudgeProvider.js";
+import { CircuitBreakerJudgeProvider } from "../src/judge/circuitBreakerJudgeProvider.js";
 
 describe("cli/ingest.ts parseArgs", () => {
   it("defaults to fixtures/traces and batch size 10", () => {
@@ -78,6 +82,37 @@ describe("cli/loadtest.ts parseArgs", () => {
       simulateLatencyMs: 50,
       queueDepthLimit: 100,
     });
+  });
+});
+
+const BASE_ENV: Env = {
+  REDIS_URL: "redis://127.0.0.1:6379",
+  JUDGE_QUEUE_NAME: "judge-grading",
+  WORKER_CONCURRENCY: 5,
+  QUEUE_DEPTH_LIMIT: 2000,
+  JOB_ATTEMPTS: 3,
+  JOB_BACKOFF_MS: 500,
+  JUDGE_MODEL: "claude-haiku-4-5",
+  ANTHROPIC_MAX_RETRIES: 7,
+  CIRCUIT_BREAKER_FAILURE_THRESHOLD: 5,
+  CIRCUIT_BREAKER_RESET_MS: 30_000,
+  LOG_LEVEL: "error",
+};
+
+describe("cli/buildProvider.ts buildProvider", () => {
+  it("returns a bare MockJudgeProvider when not live", () => {
+    const provider = buildProvider(false, BASE_ENV);
+    expect(provider).toBeInstanceOf(MockJudgeProvider);
+  });
+
+  it("wraps a LiveJudgeProvider in a circuit breaker when live", () => {
+    const provider = buildProvider(true, { ...BASE_ENV, JUDGE_MODEL: "claude-sonnet-5" });
+    expect(provider).toBeInstanceOf(CircuitBreakerJudgeProvider);
+    expect(provider.name).toBe("live+circuit-breaker");
+    expect(provider.model).toBe("claude-sonnet-5");
+    // The wrapped LiveJudgeProvider's own construction (apiKey/maxRetries passthrough to the
+    // Anthropic client) is covered by liveJudgeProvider.test.ts via an injected fetch, without
+    // a real network call; buildProvider's own job is just the wrapping shown above.
   });
 });
 

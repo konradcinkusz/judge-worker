@@ -9,6 +9,7 @@ import type { JudgeJobData } from "./producer.js";
 import { traceSchema } from "../types/trace.js";
 import type { JudgeResult } from "../types/judge.js";
 import type { DeadLetterJobData } from "../reliability/deadLetter.js";
+import { RunCostTracker } from "../reliability/costCeiling.js";
 
 export interface WorkerHooks {
   onSuccess?: (result: JudgeResult, batchId: string) => void;
@@ -32,8 +33,12 @@ export function startWorker(
   const deadLetterQueue = new Queue<DeadLetterJobData>(deadLetterQueueName(), {
     connection: redisConnection(),
   });
+  const costTracker = new RunCostTracker(env.MAX_RUN_COST_USD);
 
-  const worker = new Worker<JudgeJobData>(
+  // The processor closure below pauses the very Worker instance it's running in once the cost
+  // ceiling trips -- safe to reference `worker` here because the processor only runs
+  // asynchronously, well after this declaration has finished initializing.
+  const worker: Worker<JudgeJobData> = new Worker<JudgeJobData>(
     judgeQueueName(),
     async (job: Job<JudgeJobData>) => {
       // Anti-corruption boundary: re-validate at the point of consumption, not just at
@@ -41,6 +46,13 @@ export function startWorker(
       const trace = traceSchema.parse(job.data.trace);
       const result = await gradeTrace(provider, trace);
       hooks.onSuccess?.(result, job.data.batchId);
+      if (costTracker.record(result.costUsd) && !worker.isPaused()) {
+        logger.warn(
+          { totalCostUsd: costTracker.total, maxRunCostUsd: env.MAX_RUN_COST_USD },
+          "run cost ceiling exceeded, pausing worker (jobs already in flight will still finish)",
+        );
+        void worker.pause();
+      }
       return result;
     },
     { connection: redisConnection(), concurrency: env.WORKER_CONCURRENCY },
