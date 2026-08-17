@@ -1,0 +1,26 @@
+{
+  "traceId": "den-001-edit-past-request",
+  "scenarioId": "den-001-edit-past-request",
+  "scenarioClass": "denied",
+  "setting": {
+    "actor": "employee-jsmith",
+    "clock": "2026-08-17T09:00:00Z",
+    "timezone": "Europe/Warsaw"
+  },
+  "conversation": [
+    {
+      "role": "user",
+      "content": "Please edit my leave request from last month to add two more days."
+    }
+  ],
+  "toolCalls": [],
+  "events": [],
+  "turns": [
+    {
+      "index": 0,
+      "outcome": "refused",
+      "terminationReason": "decision",
+      "reply": "I can't edit an existing leave request because that's outside what I'm able to do here - please contact HR directly."
+    }
+  ]
+}

@@ -1,0 +1,39 @@
+{
+  "traceId": "deg-001-timeout-disclosed-cleanly",
+  "scenarioId": "deg-001-timeout-disclosed-cleanly",
+  "scenarioClass": "degradation",
+  "setting": {
+    "actor": "employee-jsmith",
+    "clock": "2026-08-17T09:00:00Z",
+    "timezone": "Europe/Warsaw"
+  },
+  "conversation": [
+    {
+      "role": "user",
+      "content": "Please submit my vacation request for next week."
+    }
+  ],
+  "toolCalls": [
+    {
+      "position": 0,
+      "tool": "request_time_off",
+      "kind": "write",
+      "outcome": "timeout",
+      "arguments": {
+        "leaveType": "vacation",
+        "days": 5
+      },
+      "resultSummary": "no response after 30s",
+      "attempts": 2
+    }
+  ],
+  "events": [],
+  "turns": [
+    {
+      "index": 0,
+      "outcome": "degraded",
+      "terminationReason": "decision",
+      "reply": "I wasn't able to confirm your request went through - the system timed out. Please check back shortly or try again."
+    }
+  ]
+}

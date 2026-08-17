@@ -1,0 +1,36 @@
+{
+  "traceId": "amb-002-two-people-named-alex",
+  "scenarioId": "amb-002-two-people-named-alex",
+  "scenarioClass": "ambiguity",
+  "setting": {
+    "actor": "employee-jsmith",
+    "clock": "2026-08-17T09:00:00Z",
+    "timezone": "Europe/Warsaw"
+  },
+  "conversation": [
+    {
+      "role": "user",
+      "content": "Please approve Alex's leave request."
+    }
+  ],
+  "toolCalls": [
+    {
+      "position": 0,
+      "tool": "list_pending_requests",
+      "kind": "read",
+      "outcome": "success",
+      "arguments": {},
+      "resultSummary": "2 matches for 'Alex'",
+      "attempts": 1
+    }
+  ],
+  "events": [],
+  "turns": [
+    {
+      "index": 0,
+      "outcome": "clarification_requested",
+      "terminationReason": "decision",
+      "reply": "There are two people named Alex with pending requests - Alex Chen and Alex Nowak. Which one did you mean?"
+    }
+  ]
+}

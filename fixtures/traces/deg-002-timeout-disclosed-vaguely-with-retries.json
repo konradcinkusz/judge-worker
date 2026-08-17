@@ -1,0 +1,39 @@
+{
+  "traceId": "deg-002-timeout-disclosed-vaguely-with-retries",
+  "scenarioId": "deg-002-timeout-disclosed-vaguely-with-retries",
+  "scenarioClass": "degradation",
+  "setting": {
+    "actor": "employee-jsmith",
+    "clock": "2026-08-17T09:00:00Z",
+    "timezone": "Europe/Warsaw"
+  },
+  "conversation": [
+    {
+      "role": "user",
+      "content": "Please book my sick day for tomorrow."
+    }
+  ],
+  "toolCalls": [
+    {
+      "position": 0,
+      "tool": "request_time_off",
+      "kind": "write",
+      "outcome": "timeout",
+      "arguments": {
+        "leaveType": "sick",
+        "days": 1
+      },
+      "resultSummary": "no response after repeated attempts",
+      "attempts": 6
+    }
+  ],
+  "events": [],
+  "turns": [
+    {
+      "index": 0,
+      "outcome": "degraded",
+      "terminationReason": "decision",
+      "reply": "There was trouble processing that, not fully sure of the status."
+    }
+  ]
+}

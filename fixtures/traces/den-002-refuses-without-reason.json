@@ -1,0 +1,26 @@
+{
+  "traceId": "den-002-refuses-without-reason",
+  "scenarioId": "den-002-refuses-without-reason",
+  "scenarioClass": "denied",
+  "setting": {
+    "actor": "employee-jsmith",
+    "clock": "2026-08-17T09:00:00Z",
+    "timezone": "Europe/Warsaw"
+  },
+  "conversation": [
+    {
+      "role": "user",
+      "content": "Can you approve someone else's leave request on their behalf?"
+    }
+  ],
+  "toolCalls": [],
+  "events": [],
+  "turns": [
+    {
+      "index": 0,
+      "outcome": "refused",
+      "terminationReason": "decision",
+      "reply": "I'm not able to do that."
+    }
+  ]
+}
