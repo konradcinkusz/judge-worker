@@ -1,5 +1,6 @@
 #!/usr/bin/env node
 import { startWorker } from "../queue/worker.js";
+import { trackActiveJobs, shutdownWithTimeout } from "../queue/shutdown.js";
 import { loadEnv } from "../config/env.js";
 import { logger } from "../observability/logger.js";
 import { safeResultFields } from "../observability/redact.js";
@@ -32,12 +33,26 @@ function main(): void {
       logger.error({ batchId, traceId, reason }, "trace dead-lettered");
     },
   });
+  const getActiveJobs = trackActiveJobs(worker);
 
   const shutdown = async (): Promise<void> => {
-    logger.info("shutting down worker");
-    await worker.close();
+    logger.info({ gracePeriodMs: env.SHUTDOWN_GRACE_PERIOD_MS }, "shutting down worker");
+    // worker.close() waits for active jobs to finish -- a single hung one (e.g. a live judge
+    // call that never resolves) must not block shutdown forever, hence the race here instead
+    // of a bare `await worker.close()`.
+    const { forced, stillActive } = await shutdownWithTimeout(
+      worker,
+      env.SHUTDOWN_GRACE_PERIOD_MS,
+      getActiveJobs,
+    );
+    if (forced) {
+      logger.warn(
+        { gracePeriodMs: env.SHUTDOWN_GRACE_PERIOD_MS, stillActive },
+        "shutdown grace period exceeded, forcing exit with jobs still active",
+      );
+    }
     await closeRedisConnection();
-    process.exit(0);
+    process.exit(forced ? 1 : 0);
   };
   process.on("SIGINT", () => void shutdown());
   process.on("SIGTERM", () => void shutdown());

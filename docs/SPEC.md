@@ -188,6 +188,15 @@ requeue --all` (`src/cli/dlq.ts`, `reliability/deadLetter.ts`) inspect it and mo
   jobs already in flight still finish, so this is a soft cap, not a hard kill. Has no effect
   against the mock judge (`costUsd` is always `null`; see `pricing.ts`). Proven in
   `test/queue.test.ts` and `test/costCeiling.test.ts`.
+- **Shutdown grace period** (`SHUTDOWN_GRACE_PERIOD_MS`, default 30000ms): `cli/worker.ts`'s
+  SIGINT/SIGTERM handler races `worker.close()` (which BullMQ documents as waiting for active
+  jobs to finish) against this timeout instead of awaiting it unconditionally, so one hung job
+  (e.g. a live judge call that never resolves) can't block shutdown forever.
+  `queue/shutdown.ts`'s `trackActiveJobs` records what's active purely from the Worker's own
+  events (no extra Redis round-trip), and `shutdownWithTimeout` reports which job(s) were
+  still active when the grace period elapsed so the force-exit gets logged with exactly what
+  it interrupted, not just that it happened. Proven in `test/queue.test.ts` end to end, using
+  a provider whose `grade()` only resolves once the test explicitly releases it.
 
 ## 8a. Logging and PII
 

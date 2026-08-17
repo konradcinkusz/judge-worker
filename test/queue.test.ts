@@ -20,6 +20,7 @@ process.env["LOG_LEVEL"] = "error";
 const { enqueueBatch, closeQueue, QueueDepthExceededError } =
   await import("../src/queue/producer.js");
 const { startWorker } = await import("../src/queue/worker.js");
+const { trackActiveJobs, shutdownWithTimeout } = await import("../src/queue/shutdown.js");
 const { closeRedisConnection } = await import("../src/queue/connection.js");
 const { MockJudgeProvider } = await import("../src/judge/mockJudgeProvider.js");
 const {
@@ -223,6 +224,100 @@ describe("queue: producer -> worker end to end", () => {
       10_000,
     );
     expect(await deadLetterDepth()).toBe(0);
+  });
+
+  it("trackActiveJobs adds a job while active and removes it once completed", async () => {
+    // A brief but real delay, not MockJudgeProvider's instant grading -- an instant job can
+    // move from "active" to "completed" faster than a 25ms poll ever observes it, which would
+    // make this test pass even if trackActiveJobs never added the job in the first place.
+    await worker.close();
+    const briefOutput: JudgeOutput = {
+      verdict: "pass",
+      scores: [{ rubric: "grounding", score: 3, justification: "ok" }],
+      confidence: "high",
+      rationale: "ok",
+    };
+    const briefDelayProvider: JudgeProvider = {
+      name: "brief-delay",
+      model: "test",
+      grade: () =>
+        new Promise((resolve) =>
+          setTimeout(() => resolve({ output: briefOutput, inputTokens: 1, outputTokens: 1 }), 150),
+        ),
+    };
+    worker = startWorker(briefDelayProvider, { onSuccess: (result) => succeeded.push(result) });
+    const getActiveJobs = trackActiveJobs(worker);
+
+    await enqueueBatch({ batchId: `track-${suffix}`, traces: [trace("track-me")] });
+    await waitUntil(() => getActiveJobs().some((j) => j.traceId === "track-me"), 10_000);
+    await waitUntil(() => !getActiveJobs().some((j) => j.traceId === "track-me"), 10_000);
+    expect(succeeded.some((r) => r.traceId === "track-me")).toBe(true);
+  });
+
+  it("shutdownWithTimeout closes cleanly (not forced) when the active job finishes in time", async () => {
+    await worker.close();
+    worker = startWorker(new MockJudgeProvider(), {
+      onSuccess: (result) => succeeded.push(result),
+    });
+    const getActiveJobs = trackActiveJobs(worker);
+
+    await enqueueBatch({ batchId: `clean-shutdown-${suffix}`, traces: [trace("clean-shutdown")] });
+    await waitUntil(() => succeeded.some((r) => r.traceId === "clean-shutdown"), 10_000);
+
+    const result = await shutdownWithTimeout(worker, 10_000, getActiveJobs);
+    expect(result.forced).toBe(false);
+    expect(result.stillActive).toEqual([]);
+
+    worker = startWorker(new MockJudgeProvider(), {
+      onSuccess: (result) => succeeded.push(result),
+      onDeadLetter: (_batchId, traceId) => dead.push(traceId),
+    });
+  });
+
+  it("shutdownWithTimeout forces after the grace period and reports the still-active job", async () => {
+    await worker.close();
+    let resolveHungJob: (() => void) | undefined;
+    const hungOutput: JudgeOutput = {
+      verdict: "pass",
+      scores: [{ rubric: "grounding", score: 3, justification: "ok" }],
+      confidence: "high",
+      rationale: "ok",
+    };
+    const hungProvider: JudgeProvider = {
+      name: "hangs-until-released",
+      model: "test",
+      grade: () =>
+        new Promise((resolve) => {
+          resolveHungJob = () => resolve({ output: hungOutput, inputTokens: 1, outputTokens: 1 });
+        }),
+    };
+    worker = startWorker(hungProvider);
+    const getActiveJobs = trackActiveJobs(worker);
+
+    await enqueueBatch({ batchId: `hung-${suffix}`, traces: [trace("will-hang")] });
+    await waitUntil(() => getActiveJobs().some((j) => j.traceId === "will-hang"), 10_000);
+
+    // Grace period (200ms) is deliberately much shorter than how long the job will actually
+    // take to resolve (until resolveHungJob() below is called) -- this is what "a live judge
+    // call that never resolves" looks like from the shutdown path's point of view.
+    const result = await shutdownWithTimeout(worker, 200, getActiveJobs);
+    expect(result.forced).toBe(true);
+    expect(result.stillActive).toHaveLength(1);
+    expect(result.stillActive[0]?.traceId).toBe("will-hang");
+    expect(result.stillActive[0]?.batchId).toBe(`hung-${suffix}`);
+    expect(typeof result.stillActive[0]?.jobId).toBe("string");
+
+    // Release the hung job so it doesn't linger indefinitely in Redis, then replace `worker`
+    // with a fresh instance for later tests -- the raced-away worker.close() call above is
+    // still resolving in the background against the old instance, and BullMQ's close() stops
+    // it from picking up further jobs immediately (not just once that promise settles), so a
+    // new worker on the same queue name doesn't race it for work.
+    resolveHungJob?.();
+    await new Promise((resolve) => setTimeout(resolve, 50));
+    worker = startWorker(new MockJudgeProvider(), {
+      onSuccess: (result) => succeeded.push(result),
+      onDeadLetter: (_batchId, traceId) => dead.push(traceId),
+    });
   });
 
   it("pauses the worker once MAX_RUN_COST_USD is exceeded, and resuming lets it continue", async () => {

@@ -20,6 +20,9 @@ const envSchema = z.object({
   /** Optional per-run spend cap; unset means unlimited. Only non-null JudgeResult.costUsd
    *  values count, so this has no effect against the mock judge. */
   MAX_RUN_COST_USD: z.coerce.number().positive().optional(),
+  /** How long worker.ts's SIGINT/SIGTERM handler waits for active jobs to finish before
+   *  force-exiting -- default matches Kubernetes' own terminationGracePeriodSeconds default. */
+  SHUTDOWN_GRACE_PERIOD_MS: z.coerce.number().int().positive().default(30_000),
   LOG_LEVEL: z.enum(["fatal", "error", "warn", "info", "debug", "trace"]).default("info"),
 });
 
