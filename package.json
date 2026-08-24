@@ -26,7 +26,7 @@
     "dlq": "tsx src/cli/dlq.ts"
   },
   "dependencies": {
-    "@anthropic-ai/sdk": "^0.117.1",
+    "@anthropic-ai/sdk": "^0.120.0",
     "bullmq": "^5.34.0",
     "ioredis": "^5.4.1",
     "pino": "^9.5.0",
