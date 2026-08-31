@@ -1,0 +1,58 @@
+#!/bin/sh
+# pre-commit -- scan staged changes for secrets before they become history.
+#
+# The other half of architecture-standards' REPO-BASELINE.md §2, which asks for a secret
+# scanner pre-commit *and* in CI: .github/workflows/secret-scan.yml catches contributors
+# without hooks, this catches the mistake before it is a commit at all. The estate's recorded
+# failure this exists to prevent: live credentials pasted into a tracked helper script,
+# because inline literals were the path of least resistance and nothing said no.
+#
+# Installed by `pnpm install` (package.json's `prepare` script sets core.hooksPath). To wire
+# it up by hand, or after cloning without installing:
+#
+#     git config core.hooksPath .githooks
+#
+# Skip it for a single commit with `git commit --no-verify` -- CI still scans full history, so
+# the finding surfaces on the pull request instead of here.
+
+set -eu
+
+CONFIG=".gitleaks.toml"
+IMAGE="ghcr.io/gitleaks/gitleaks:latest"
+
+# gitleaks renamed `protect` to `git --staged` in v8.19 and kept the old name as a deprecated
+# alias for a while. Probe rather than assume, so upgrading the scanner doesn't start blocking
+# every commit for the wrong reason -- same reasoning as the probe in secret-scan.yml.
+staged_args() {
+  if "$@" git --help >/dev/null 2>&1; then
+    echo "git --staged"
+  else
+    echo "protect --staged"
+  fi
+}
+
+if command -v gitleaks >/dev/null 2>&1; then
+  # shellcheck disable=SC2046 # deliberate word splitting: the probe returns a two-word subcommand
+  gitleaks $(staged_args gitleaks) \
+    --config="$CONFIG" \
+    --redact \
+    --no-banner \
+    --exit-code 1
+elif command -v docker >/dev/null 2>&1 && docker info >/dev/null 2>&1; then
+  # Same image CI uses, so a hook finding and a CI finding are the same finding.
+  # shellcheck disable=SC2046
+  docker run --rm -v "$PWD:/repo" -w /repo "$IMAGE" \
+    $(staged_args docker run --rm "$IMAGE") \
+    --config=/repo/"$CONFIG" \
+    --redact \
+    --no-banner \
+    --exit-code 1
+else
+  # Deliberately a warning, not a hard failure. A hook that blocks every commit on a machine
+  # without the tool gets disabled wholesale within a day, which is strictly worse than this
+  # message -- and CI still scans full history before anything reaches main.
+  printf '\n\033[33mwarning:\033[0m gitleaks not found -- staged changes were NOT scanned for secrets.\n'
+  printf '  install:  https://github.com/gitleaks/gitleaks#installing (or start Docker; this hook falls back to %s)\n' "$IMAGE"
+  printf '  CI still scans full history on every push and pull request.\n\n'
+  exit 0
+fi

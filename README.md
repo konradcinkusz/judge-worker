@@ -1,5 +1,15 @@
 # judge-worker
 
+[![Ask me anything](https://flat.badgen.net/static/Ask%20me/anything?icon=github&color=black&scale=1.01)](https://github.com/konradcinkusz "Ask me anything")
+[![GitHub license](https://flat.badgen.net/github/license/konradcinkusz/judge-worker?icon=github&color=black&scale=1.01)](https://github.com/konradcinkusz/judge-worker/blob/main/LICENSE "GitHub license")
+[![Maintained](https://flat.badgen.net/static/Maintained/yes?icon=github&color=black&scale=1.01)](https://github.com/konradcinkusz/judge-worker/commits/main "Maintained")
+[![GitHub branches](https://flat.badgen.net/github/branches/konradcinkusz/judge-worker?icon=github&color=black&scale=1.01)](https://github.com/konradcinkusz/judge-worker/branches "GitHub branches")
+[![GitHub commits](https://flat.badgen.net/github/commits/konradcinkusz/judge-worker?icon=github&color=black&scale=1.01)](https://github.com/konradcinkusz/judge-worker/commits/main "GitHub commits")
+[![GitHub issues](https://flat.badgen.net/github/issues/konradcinkusz/judge-worker?icon=github&color=black&scale=1.01)](https://github.com/konradcinkusz/judge-worker/issues "GitHub issues")
+[![GitHub pull requests](https://flat.badgen.net/github/prs/konradcinkusz/judge-worker?icon=github&color=black&scale=1.01)](https://github.com/konradcinkusz/judge-worker/pulls "GitHub pull requests")
+[![CI](https://github.com/konradcinkusz/judge-worker/actions/workflows/ci.yml/badge.svg)](https://github.com/konradcinkusz/judge-worker/actions/workflows/ci.yml "CI")
+[![Secret Scan](https://github.com/konradcinkusz/judge-worker/actions/workflows/secret-scan.yml/badge.svg)](https://github.com/konradcinkusz/judge-worker/actions/workflows/secret-scan.yml "Secret Scan")
+
 An async worker that pulls batches of already-ingested agent trace data off a Redis/BullMQ
 queue and runs LLM-as-a-judge grading on them in the background — with the judge itself
 proven reliable via mutation testing and calibrated against human labels, not just assumed to
