@@ -6,6 +6,11 @@ evals" discipline `architecture-standards/docs/guides/AI-EVALS.md` asks for, app
 queue worker instead of an HTTP service. An eval suite (here: the judge's own test suite) is
 to a judge what a migration is to a schema — the sanctioned way to change it.
 
+References below to _the master prompt_ (or _master spec_) mean the private build brief this
+repository was produced from — a working document, not a published one. Wherever it is cited
+as the reason for a decision, the relevant text is quoted inline, so no argument here depends
+on the reader having seen it.
+
 ## 1. What this is
 
 An async worker that pulls batches of already-ingested agent trace data off a Redis/BullMQ

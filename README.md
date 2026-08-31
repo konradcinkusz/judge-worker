@@ -123,8 +123,9 @@ pnpm run test                         # full suite, incl. the mutation-testing h
 | 6 — Findings          | [FINDINGS.md](./FINDINGS.md) — what this proves, honestly, with real numbers                           |
 
 Optional Phase 7 (wiring judge output back into a self-hosted Langfuse fork via its SDK/OTLP
-endpoint) is out of scope for this repo — see the master build prompt for context if you have
-it; it's a stretch target for later, not a dependency the base repo needs.
+endpoint) is out of scope for this repo — a stretch target for later, not a dependency the
+base repo needs. Tracked in
+[#21](https://github.com/konradcinkusz/judge-worker/issues/21).
 
 ## Local development
 
