@@ -68,12 +68,11 @@ async function waitForDrain(timeoutMs: number): Promise<void> {
   const queue = judgeQueue();
   const deadline = Date.now() + timeoutMs;
   while (Date.now() < deadline) {
-    const counts = await queue.getJobCounts("waiting", "active", "delayed", "paused");
-    const pending =
-      (counts["waiting"] ?? 0) +
-      (counts["active"] ?? 0) +
-      (counts["delayed"] ?? 0) +
-      (counts["paused"] ?? 0);
+    // BullMQ 6 removed the separate "paused" list -- a paused queue's jobs stay in "waiting"
+    // -- so waiting+active+delayed is the complete pending set. Counting "paused" here is a
+    // type error against v6 and would double-count nothing against v5.
+    const counts = await queue.getJobCounts("waiting", "active", "delayed");
+    const pending = (counts["waiting"] ?? 0) + (counts["active"] ?? 0) + (counts["delayed"] ?? 0);
     if (pending === 0) return;
     await new Promise((resolve) => setTimeout(resolve, 300));
   }
