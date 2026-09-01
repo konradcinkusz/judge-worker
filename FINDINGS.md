@@ -27,7 +27,7 @@ worker`, no API key required).
 - **Not production-scale throughput.** The load test below ran 1,000 synthetic traces
   against the mock judge in well under a second — that is a statement about Redis/BullMQ
   overhead on a laptop-sized workload, not about how this pipeline behaves under the
-  terabytes-per-day volume the job posting describes. See "Scale" below.
+  terabytes-per-day volume a production tracing platform handles. See "Scale" below.
 - **Not evidence that a real LLM judge agrees with a human.** The calibration run below used
   the mock heuristic judge, whose scoring logic and the human labels it's compared against
   were both written by the same person in the same sitting. See "Calibration" below for why

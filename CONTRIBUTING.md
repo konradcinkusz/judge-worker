@@ -1,6 +1,6 @@
 # Contributing
 
-This is a solo portfolio project (see the README's "Why this exists"), but real bug reports,
+This is a solo project (see the README's "Why this exists"), but real bug reports,
 questions, and small fixes are welcome.
 
 ## Before filing an issue

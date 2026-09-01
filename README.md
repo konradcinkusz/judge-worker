@@ -21,25 +21,25 @@ work.
 
 ## Why this exists
 
-I'm applying for **Senior Backend Engineer (Data Infrastructure)** at Langfuse — an
-open-source LLM engineering platform processing terabytes of AI tracing data per day. One
-bullet from the job posting, quoted verbatim:
+An LLM observability platform ingests enormous volumes of agent trace data, and grading that
+data with an LLM-as-a-judge is necessarily _post-processing_: too slow and too expensive to
+sit in the request path, so it runs asynchronously, off a queue, after ingestion. This repo
+builds that shape end to end at small scale — an async worker that pulls batches of
+already-ingested traces off Redis and grades them against a pinned rubric.
 
-> Build new infrastructure-heavy features: things like LLM-as-a-Judge (where we post-process
-> large volumes of ingested data asynchronously), alerting at scale, client-code execution,
-> or batch dataset operations.
+The constraints are deliberately a production stack's rather than a toy's: a TypeScript
+worker, Redis + BullMQ for the queue, real backpressure, retries and a dead-letter path, and
+per-call cost accounting.
 
-And their stack, also quoted verbatim:
+The harder half is the judge itself. A judge nobody has deliberately broken is a judge nobody
+has tested — so the rubric is pinned in a spec written before the code it governs
+([docs/SPEC.md](./docs/SPEC.md)), five hand-written mutants each corrupt exactly one grading
+constraint to prove the suite would notice ([MUTATIONS.md](./MUTATIONS.md)), and a calibration
+pass scores the judge against human labels, reporting `null` rather than a flattering number
+when the sample cannot support one ([docs/CALIBRATION.md](./docs/CALIBRATION.md)).
 
-> TypeScript monorepo: Next.js on the frontend, Express workers for background jobs,
-> PostgreSQL for transactional data, ClickHouse for tracing at scale, S3 for file storage,
-> and Redis for queues and caching.
-
-This repo is a small, standalone proof of that one bullet: an async worker that grades
-batches of trace data against a pinned rubric, in the language and queue technology the team
-actually uses (TypeScript, Redis + BullMQ) — not a smaller Langfuse, not a tracing UI, not a
-ClickHouse deployment. See [FINDINGS.md](./FINDINGS.md) for what running it actually proved,
-with real numbers from real runs, not projections.
+See [FINDINGS.md](./FINDINGS.md) for what running it actually proved, with real numbers from
+real runs, not projections.
 
 ## Quickstart
 
@@ -97,13 +97,13 @@ pnpm run test                         # full suite, incl. the mutation-testing h
 
 ## What this is not
 
-- **Not a tracing platform, not a ClickHouse deployment, not a competitor to Langfuse.**
+- **Not a tracing platform.** No ingestion path, no trace storage at scale, no UI — it grades
+  traces that something else already recorded.
 - **Not evidence of TypeScript seniority.** It's evidence that I can build correct, tested,
   production-shaped async infrastructure in a language that isn't my primary one, using
   patterns — spec-first evals, mutation-tested judges, calibration against human labels — I
   already use in production-adjacent work elsewhere.
-- **Not built for or endorsed by Langfuse.** Built after reading one specific bullet in their
-  public job posting, stated as fact.
+- **Not affiliated with, or endorsed by, any product named in this repository.**
 - **Not a claim of production-scale throughput.** The load test in `FINDINGS.md` ran a
   thousand synthetic traces on a laptop-sized Redis instance, not terabytes-per-day. The code
   is structured so scaling up is a matter of tuning (concurrency, queue depth limits, judge
