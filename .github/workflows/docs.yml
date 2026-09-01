@@ -5,13 +5,18 @@ name: Deploy docs to Pages
 # worker's own CI (.github/workflows/ci.yml) -- a docs-only change shouldn't
 # need Redis or Node, and a code change shouldn't need Ruby.
 #
-# This workflow enables Pages itself (`enablement: true` on configure-pages),
-# so no manual Settings step is required -- the `pages: write` permission below
-# is what lets it create the Pages site on the first run. The earlier version of
-# this file asserted the opposite and left the setup to a human; every one of the
-# four merges to main this workflow ran on failed at "Setup Pages" with
-# `Get Pages site failed ... Not Found` before that assumption was checked
-# against the action's own inputs.
+# SETUP: Pages must be enabled once by a human, in Settings -> Pages ->
+# "Build and deployment" -> Source -> "GitHub Actions". Until that is done every
+# run dies at "Setup Pages" and the deploy job is skipped -- which is what the
+# first five runs of this workflow did.
+#
+# `enablement: true` below asks configure-pages to create the site itself. That
+# is worth keeping (it is idempotent, and it makes the failure legible), but it
+# does NOT remove the manual step here: GITHUB_TOKEN is refused the create call
+# with `Create Pages site failed. Error: Resource not accessible by integration`
+# even though this job declares `pages: write`. Creating a Pages site needs a
+# user or a PAT, not the workflow token. Once the site exists, this step is a
+# no-op and the workflow is fully automatic from then on.
 
 on:
   push:
@@ -55,9 +60,11 @@ jobs:
         id: pages
         uses: actions/configure-pages@v5
         with:
-          # Create the Pages site if it does not exist yet, rather than failing on a
-          # lookup. Idempotent: a no-op once the site exists, so this stays correct
-          # whether or not anyone has touched Settings -> Pages.
+          # Create the Pages site if it does not exist yet, rather than only looking it
+          # up. Idempotent once the site exists. Note this cannot bootstrap Pages on its
+          # own here -- see the SETUP note at the top of this file -- but it turns an
+          # opaque "Not Found" into an explicit "Create Pages site failed", which is the
+          # difference between a five-run mystery and a one-line answer.
           enablement: true
 
       - name: Build with Jekyll
