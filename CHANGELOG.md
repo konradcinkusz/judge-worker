@@ -63,8 +63,11 @@ is to a judge what a migration is to a schema.
 ### Known gaps
 
 - `LiveJudgeProvider` has never run against a real API key, so no live calibration figure
-  exists — tracked in [#3](https://github.com/konradcinkusz/judge-worker/issues/3) and
-  [#5](https://github.com/konradcinkusz/judge-worker/issues/5). Every published kappa comes
-  from the mock judge and is labelled as such.
+  exists. Every published kappa comes from the mock judge and is labelled as such, here and
+  in [FINDINGS.md](./FINDINGS.md) and [docs/CALIBRATION.md](./docs/CALIBRATION.md).
+  [#3](https://github.com/konradcinkusz/judge-worker/issues/3) and
+  [#5](https://github.com/konradcinkusz/judge-worker/issues/5) are closed as _not planned_
+  rather than done — they need a credential this project does not carry, so this file is
+  where the gap is recorded, not the issue tracker.
 - Load-test numbers are a thousand synthetic traces on one machine, not production volume.
   [FINDINGS.md](./FINDINGS.md) states what that does and does not prove.
