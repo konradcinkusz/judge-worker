@@ -1,8 +1,8 @@
 import type { JudgeResult } from "../types/judge.js";
 
 /**
- * Per-batch accounting mirroring the job bullet's "throughput, latency, reliability, and cost
- * efficiency" language. One instance per batch; the worker feeds it as jobs complete and the
+ * Per-batch accounting for throughput, latency, reliability and cost efficiency -- the four
+ * numbers that decide whether this pipeline is worth running. One instance per batch; the worker feeds it as jobs complete and the
  * CLI prints/persists the summary — see cli/loadtest.ts for a real (not projected) run.
  */
 export class BatchMetrics {

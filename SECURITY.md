@@ -7,7 +7,7 @@ Please use GitHub's private vulnerability reporting rather than a public issue: 
 vulnerability". That opens a private advisory only the maintainer can see until it's resolved.
 
 If that option isn't available (private reporting must be enabled per-repo, and this repo is a
-solo portfolio project without a dedicated security process), open a regular issue with as
+solo project without a dedicated security process), open a regular issue with as
 little detail as you're comfortable putting in public, and say so — the maintainer will follow
 up for anything sensitive out of band.
 
@@ -16,7 +16,7 @@ would let someone reproduce the problem before it's fixed.
 
 ## Scope
 
-This is a demo/portfolio repository (see the README's "What this is not"), not a production
+This is a demo repository (see the README's "What this is not"), not a production
 service with user data or a live deployment. Realistic concerns are things like: a dependency
 with a known CVE, a way to make the worker execute something it shouldn't (e.g. via malformed
 trace JSON — see `docs/SPEC.md` §2's anti-corruption boundary), or credential handling issues

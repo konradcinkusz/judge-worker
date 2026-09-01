@@ -1,6 +1,6 @@
 # Contributing
 
-This is a solo portfolio project (see the README's "Why this exists"), but real bug reports,
+This is a solo project (see the README's "Why this exists"), but real bug reports,
 questions, and small fixes are welcome.
 
 ## Before filing an issue
@@ -18,6 +18,12 @@ docker compose up redis -d
 pnpm run ingest && pnpm run worker   # the default demo — zero API keys needed
 ```
 
+`pnpm install` also points `core.hooksPath` at `.githooks/`, which installs a gitleaks
+pre-commit scan over your staged changes. It warns and lets the commit through if gitleaks
+isn't installed rather than blocking you — install it from
+[gitleaks/gitleaks](https://github.com/gitleaks/gitleaks#installing), or leave Docker running
+and the hook falls back to the same image CI uses.
+
 See the README's Quickstart and Local development sections for the rest, including the fully
 containerized (`docker compose up --build`) alternative.
 
@@ -31,8 +37,10 @@ containerized (`docker compose up --build`) alternative.
   test file that owns the behavior rather than starting a new one, unless nothing does yet.
 - If the change affects behavior described in `docs/SPEC.md`, update the spec in the same PR —
   see the PR template's "Spec impact" section.
-- No secrets, tokens, or real personal data — this repo is public, and fixture traces are
-  fictional by design (see `SECURITY.md` for what to do with anything sensitive).
+- No secrets, tokens, or real personal data — treat anything committed here as world-readable
+  and permanent, and fixture traces are fictional by design (see `SECURITY.md` for what to do
+  with anything sensitive). `pnpm install` wires up a gitleaks pre-commit hook that scans your
+  staged changes; CI scans full history on top of it.
 
 ## Code style
 

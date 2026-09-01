@@ -27,7 +27,7 @@ worker`, no API key required).
 - **Not production-scale throughput.** The load test below ran 1,000 synthetic traces
   against the mock judge in well under a second — that is a statement about Redis/BullMQ
   overhead on a laptop-sized workload, not about how this pipeline behaves under the
-  terabytes-per-day volume the job posting describes. See "Scale" below.
+  terabytes-per-day volume a production tracing platform handles. See "Scale" below.
 - **Not evidence that a real LLM judge agrees with a human.** The calibration run below used
   the mock heuristic judge, whose scoring logic and the human labels it's compared against
   were both written by the same person in the same sitting. See "Calibration" below for why
@@ -40,15 +40,22 @@ worker`, no API key required).
 
 ```
 $ pnpm run test
- Test Files  7 passed (7)
-      Tests  30 passed (30)
+ Test Files  15 passed (15)
+      Tests  103 passed (103)
 ```
 
 `pnpm run lint`, `pnpm run typecheck`, and `pnpm run format:check` all pass clean on this
-commit. 30 tests across schema validation, the mock judge's scoring logic (checked against
+commit. 103 tests across schema validation, the mock judge's scoring logic (checked against
 every fixture's human-labeled ground truth, not just spot-checked), Cohen's kappa, the
-calibration gate, the mutation-testing harness (5/5 caught), batch chunking, and a real
-Redis-backed integration test of the producer → worker → dead-letter path.
+calibration gate, the mutation-testing harness (5/5 caught), batch chunking, the live
+provider's retry/circuit-breaker path, the cost ceiling, the logging-redaction policy, the
+Prometheus metrics and their HTTP endpoint, the CLI entry points, and a real Redis-backed
+integration test of the producer → worker → dead-letter path.
+
+_(This block is the one number in this file re-measured after the original run: it was
+`7 files / 30 tests` when first written, and the reliability and observability work that
+followed added the rest. Re-run 2026-08-31; every other figure below still reproduces as
+written.)_
 
 ## Mutation testing
 

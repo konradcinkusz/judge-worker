@@ -14,7 +14,7 @@ import type { JudgeProvider } from "./judgeProvider.js";
  * without hand-written parsing code.
  *
  * Model defaults to Claude Haiku 4.5: cheap and fast for a bounded per-criterion scoring
- * task with a fixed anchor scale, matching the job bullet's "cost efficiency" framing for
+ * task with a fixed anchor scale, which is what keeps cost efficiency in reach when
  * post-processing large volumes of traces. Override with JUDGE_MODEL for a stronger judge
  * (e.g. claude-sonnet-5) when the calibration report says Haiku's agreement with human
  * labels doesn't clear the bar.

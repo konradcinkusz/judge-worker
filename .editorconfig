@@ -1,0 +1,34 @@
+# Baseline formatting, applied by the editor before Prettier ever runs
+# (architecture-standards/docs/guides/REPO-BASELINE.md §1).
+#
+# Prettier owns the formatting of everything it handles -- these values mirror
+# .prettierrc.json rather than competing with it, so a file looks the same whether it was
+# saved by an editor without the Prettier plugin or by `pnpm run format`. The entries below
+# for filetypes Prettier does not touch (Gemfile, shell hooks, .gitattributes) are the ones
+# doing real work.
+
+root = true
+
+[*]
+charset = utf-8
+end_of_line = lf
+insert_final_newline = true
+trim_trailing_whitespace = true
+indent_style = space
+indent_size = 2
+
+# Prettier keeps markdown's two-trailing-space hard line break meaningful.
+[*.md]
+trim_trailing_whitespace = false
+
+[*.{yml,yaml,json,jsonc}]
+indent_size = 2
+
+[{Gemfile,Gemfile.lock,*.rb}]
+indent_size = 2
+
+[.githooks/*]
+indent_size = 2
+
+[Makefile]
+indent_style = tab

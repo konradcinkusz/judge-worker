@@ -1,0 +1,41 @@
+# Real rules, not a commented-out stock template
+# (architecture-standards/docs/guides/REPO-BASELINE.md §1).
+
+# ─── Line endings ────────────────────────────────────────────────────────────
+# Normalize to LF in the repository; Git still checks out native endings where a platform
+# wants them. Without this, a contributor on Windows can turn a whitespace-only change into a
+# whole-file diff that buries the real one.
+* text=auto eol=lf
+
+# The pre-commit hook is executed by /bin/sh -- CRLF here is a "bad interpreter" failure that
+# only reproduces on someone else's machine. Pinned explicitly rather than relying on the
+# wildcard above.
+.githooks/* text eol=lf
+*.sh text eol=lf
+
+# ─── Generated files ─────────────────────────────────────────────────────────
+# Collapsed by default in pull-request diffs and excluded from language statistics. These are
+# tool output: reviewed for *what changed*, never read line by line.
+pnpm-lock.yaml   -diff linguist-generated=true
+Gemfile.lock     -diff linguist-generated=true
+
+# ─── Language statistics ─────────────────────────────────────────────────────
+# GitHub's language bar samples every tracked file, so the Jekyll docs site (Ruby) and this
+# repo's substantial prose would otherwise misreport what this repository actually is. The
+# code is TypeScript; the markdown is documentation and the Gemfile is site scaffolding.
+docs/**          linguist-documentation=true
+site/**          linguist-documentation=true
+_includes/**     linguist-documentation=true
+*.md             linguist-documentation=true
+Gemfile          linguist-vendored=true
+
+# Fixture traces are hand-authored test data, not generated -- they stay fully diffable, since
+# reviewing a change to a fixture *is* reviewing a change to what "correct" means.
+
+# ─── Archives ────────────────────────────────────────────────────────────────
+# Kept out of `git archive` tarballs: useful in a clone, noise in a source download.
+.github/         export-ignore
+.githooks/       export-ignore
+.claude/         export-ignore
+.editorconfig    export-ignore
+.gitattributes   export-ignore

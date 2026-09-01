@@ -15,11 +15,10 @@ names the exact trigger for when that pattern stops being enough: _"no durabilit
 restarts, no retries, no backpressure. When any of those becomes a requirement, that is the
 recorded trigger to introduce a queue."_
 
-**Decision**: use Redis + BullMQ anyway. **Why**: this repo exists specifically to
-demonstrate the job posting's own bullet — _"Build new infrastructure-heavy features: things
-like LLM-as-a-Judge (where we post-process large volumes of ingested data asynchronously)...
-Redis for queues and caching"_ — so the target stack names the broker directly; it is not an
-incidental choice this repo could avoid. Independent of that, the trigger conditions
+**Decision**: use Redis + BullMQ anyway. **Why**: the workload this repo exists to
+demonstrate — asynchronous post-processing of large volumes of already-ingested trace data —
+is defined by the queue it runs on, so the broker is load-bearing rather than an incidental
+choice this repo could avoid. Independent of that, the trigger conditions
 `SERVICE-API-PATTERNS.md` §6 names are all genuinely present: **durability** (a batch of
 hundreds of trace-grading jobs must survive a worker restart mid-run), **retries** (an LLM API
 call fails transiently — rate limits, 5xx — far more often than a database write), and
@@ -35,7 +34,7 @@ backpressure) this workload needs, by the guide's own words.
 **Consequences**: a Redis dependency this repo would not otherwise have; `docker-compose.yml`
 exists solely to provide it for local dev. Revisit if this repo's scope narrows to something
 that no longer needs durability/retries/backpressure (unlikely, since that would mean
-abandoning the job bullet this repo demonstrates).
+abandoning the post-processing workload this repo demonstrates).
 
 ## ADR-2: hand-written judge mutants gate every PR, not just a periodic health check
 

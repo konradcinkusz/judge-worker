@@ -13,6 +13,10 @@ _site
 .sass-cache
 .git
 .github
+.githooks
+.claude
+.editorconfig
+.gitattributes
 .env
 .env.local
 .env.*.local

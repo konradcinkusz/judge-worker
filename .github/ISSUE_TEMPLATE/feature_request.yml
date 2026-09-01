@@ -64,7 +64,7 @@ body:
       label: Scope check
       description: The README's "What this is not". Tick anything this request touches.
       options:
-        - label: A tracing platform, ClickHouse deployment, or competing with Langfuse
+        - label: A tracing platform, trace storage at scale, or an ingestion UI
         - label: A claim of production-scale throughput (vs. the current small-scale demo)
-        - label: Something built for or implying endorsement by Langfuse
+        - label: Something implying affiliation with, or endorsement by, a third-party product
         - label: None of these
