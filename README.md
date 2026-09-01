@@ -9,6 +9,7 @@
 [![GitHub pull requests](https://flat.badgen.net/github/prs/konradcinkusz/judge-worker?icon=github&color=black&scale=1.01)](https://github.com/konradcinkusz/judge-worker/pulls "GitHub pull requests")
 [![CI](https://github.com/konradcinkusz/judge-worker/actions/workflows/ci.yml/badge.svg)](https://github.com/konradcinkusz/judge-worker/actions/workflows/ci.yml "CI")
 [![Secret Scan](https://github.com/konradcinkusz/judge-worker/actions/workflows/secret-scan.yml/badge.svg)](https://github.com/konradcinkusz/judge-worker/actions/workflows/secret-scan.yml "Secret Scan")
+[![CodeQL](https://github.com/konradcinkusz/judge-worker/actions/workflows/codeql.yml/badge.svg)](https://github.com/konradcinkusz/judge-worker/actions/workflows/codeql.yml "CodeQL")
 
 An async worker that pulls batches of already-ingested agent trace data off a Redis/BullMQ
 queue and runs LLM-as-a-judge grading on them in the background — with the judge itself
