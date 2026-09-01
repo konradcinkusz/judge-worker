@@ -5,10 +5,13 @@ name: Deploy docs to Pages
 # worker's own CI (.github/workflows/ci.yml) -- a docs-only change shouldn't
 # need Redis or Node, and a code change shouldn't need Ruby.
 #
-# One-time manual step this workflow cannot do for you: in the repo's
-# Settings -> Pages, set "Build and deployment" -> Source to "GitHub Actions".
-# Until that's set, this workflow's deploy job will fail with a permissions
-# error even though the build succeeds.
+# This workflow enables Pages itself (`enablement: true` on configure-pages),
+# so no manual Settings step is required -- the `pages: write` permission below
+# is what lets it create the Pages site on the first run. The earlier version of
+# this file asserted the opposite and left the setup to a human; every one of the
+# four merges to main this workflow ran on failed at "Setup Pages" with
+# `Get Pages site failed ... Not Found` before that assumption was checked
+# against the action's own inputs.
 
 on:
   push:
@@ -51,6 +54,11 @@ jobs:
       - name: Setup Pages
         id: pages
         uses: actions/configure-pages@v5
+        with:
+          # Create the Pages site if it does not exist yet, rather than failing on a
+          # lookup. Idempotent: a no-op once the site exists, so this stays correct
+          # whether or not anyone has touched Settings -> Pages.
+          enablement: true
 
       - name: Build with Jekyll
         run: bundle exec jekyll build --baseurl "${{ steps.pages.outputs.base_path }}"
