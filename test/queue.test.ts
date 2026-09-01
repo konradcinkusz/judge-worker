@@ -351,7 +351,7 @@ describe("queue: producer -> worker end to end", () => {
     await new Promise((resolve) => setTimeout(resolve, 500));
     expect(priced.length).toBe(3);
 
-    worker.resume();
+    await worker.resume();
     await waitUntil(() => priced.length === 4, 10_000);
     expect(priced.map((r) => r.traceId)).toContain("cost-after");
   });
